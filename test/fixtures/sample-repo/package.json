@@ -1,0 +1,8 @@
+{
+  "name": "sample-repo",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "node src/server.js",
+    "test": "echo sample"
+  }
+}

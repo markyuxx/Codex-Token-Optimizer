@@ -1,0 +1,26 @@
+{
+  "name": "codex-token-optimizer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Compacta AGENTS.md y genera un indice local de alto valor para reducir tokens en repos grandes.",
+  "type": "commonjs",
+  "bin": {
+    "agent-index": "./bin/agent-index.js"
+  },
+  "scripts": {
+    "build": "node ./bin/agent-index.js build",
+    "check": "node ./bin/agent-index.js check",
+    "benchmark": "node ./bin/agent-index.js benchmark",
+    "summary": "node ./bin/agent-index.js summary",
+    "test": "node ./test/smoke.js && node ./test/mcp-smoke.js"
+  },
+  "keywords": [
+    "agents",
+    "context",
+    "mcp",
+    "tokens",
+    "search",
+    "indexing"
+  ],
+  "license": "UNLICENSED"
+}
