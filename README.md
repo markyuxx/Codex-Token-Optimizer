@@ -20,6 +20,99 @@ The intended outcome is roughly the workflow described by the original spec:
 - index the repo into bounded JSON sidecars
 - query the details only when needed
 
+## Installation
+
+Right now the project is distributed through GitHub rather than the npm registry.
+
+Repository:
+
+- `https://github.com/markyuxx/Codex-Token-Optimizer`
+
+You have three practical installation paths:
+
+### 1. Clone and run locally
+
+Best when you want the simplest setup and full control.
+
+```bash
+git clone https://github.com/markyuxx/Codex-Token-Optimizer.git
+cd Codex-Token-Optimizer
+npm install
+```
+
+Then run the CLI against the target repo:
+
+```bash
+node ./bin/agent-index.js build --root ../my-project
+node ./bin/agent-index.js summary --root ../my-project
+```
+
+### 2. Install globally from GitHub
+
+Best when you want the `agent-index` command available everywhere.
+
+```bash
+npm install -g git+https://github.com/markyuxx/Codex-Token-Optimizer.git
+```
+
+Then use it directly:
+
+```bash
+agent-index build --root ../my-project
+agent-index search "auth routes" --root ../my-project
+```
+
+### 3. Download a GitHub release asset
+
+Best when you want a fixed snapshot version.
+
+1. Download the latest release from GitHub.
+2. Extract it locally.
+3. Run `npm install`.
+4. Use `node ./bin/agent-index.js ...` or install it globally from the extracted folder with `npm install -g .`.
+
+## How to enable always-on mode
+
+`Codex-Token-Optimizer` does not force itself on every repo automatically. A repository becomes "always-on" only after you run a build inside that target repo.
+
+The activation flow is:
+
+1. Start in the repository you want to optimize.
+2. Run `agent-index build` or `node ./bin/agent-index.js build`.
+3. Let it replace the long root `AGENTS.md` with the compact generated one.
+4. Commit both the compact `AGENTS.md` and `.agent-index/`.
+
+Example:
+
+```bash
+cd ../my-project
+agent-index build
+git add AGENTS.md .agent-index
+git commit -m "Enable compact AGENTS index"
+```
+
+After that, the repo behaves in the intended always-on style:
+
+- agents read the compact `AGENTS.md` first
+- deeper context is pulled from `.agent-index/`
+- searches happen through `agent-index search`, `file`, `symbol`, or MCP
+- stale context can be detected with `agent-index check`
+
+If you want the mode to stay healthy over time, rebuild the index when:
+
+- `AGENTS.md` changes significantly
+- commands or folder structure change
+- new subsystems are added
+- the staleness check starts failing
+
+Recommended maintenance:
+
+```bash
+agent-index build
+agent-index check
+agent-index benchmark
+```
+
 ## What it does
 
 When you run `agent-index build` in a repository:
@@ -71,6 +164,14 @@ npm install
 node ./bin/agent-index.js build
 node ./bin/agent-index.js summary
 node ./bin/agent-index.js search "auth routes"
+```
+
+If you installed globally, the same flow becomes:
+
+```bash
+agent-index build --root ../my-project
+agent-index summary --root ../my-project
+agent-index search "auth routes" --root ../my-project
 ```
 
 You can also target another repo explicitly:
@@ -270,6 +371,19 @@ Example `.mcp.json` entry in the target repository:
 ```
 
 Run the MCP server from the repository you want to index, or set `AGENT_INDEX_ROOT`.
+
+Example with a globally installed CLI:
+
+```json
+{
+  "mcpServers": {
+    "agent-index": {
+      "command": "agent-index",
+      "args": ["mcp"]
+    }
+  }
+}
+```
 
 ## Local-only design
 
