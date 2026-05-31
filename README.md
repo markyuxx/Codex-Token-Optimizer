@@ -1,38 +1,121 @@
-# Codex-Token-Optimizer
+# Codex Token Optimizer
 
-`Codex-Token-Optimizer` is a local-only Node.js utility that turns a long `AGENTS.md` into a compact repo index and exposes deeper context through CLI and MCP tools.
+Codex Token Optimizer is a practical hybrid framework for reducing agent context cost without pretending that a static prompt compactor is enough.
 
-The goal is simple: replace a heavy static instruction file with a short generated index plus on-demand retrieval of high-signal code context. In practice, that means dramatically lower prompt overhead while keeping deeper context one query away.
+It combines:
 
-## Summary
+- exact token counting when the provider supports it,
+- code indexing with AST metadata,
+- lexical retrieval plus pluggable embeddings,
+- cached file reads with stable references,
+- command execution through a summarizing proxy,
+- pinned rules that stay visible in every context bundle,
+- benchmark runs that compare optimized retrieval against a baseline.
 
-This project is built for agentic coding workflows where you want:
+## Why this exists
 
-- a compact `AGENTS.md` that is cheap to inject repeatedly
-- deeper context available on demand instead of front-loading huge prompts
-- repo-aware lookup for files, scripts, MCP config, routes, symbols, and staleness
-- a local stdio MCP server with zero network dependency
+Most so-called token optimizers only do one shallow thing:
 
-The intended outcome is roughly the workflow described by the original spec:
+- shorten a static prompt,
+- build a naive grep index,
+- or summarize a giant blob after the damage is already done.
 
-- keep critical safety and project guidance in a short `AGENTS.md`
-- move the full original file into `.agent-index/AGENTS.full.md`
-- index the repo into bounded JSON sidecars
-- query the details only when needed
+That does not solve the real problem.
+
+Real token waste usually comes from:
+
+- reading the same files again and again,
+- dumping giant logs into context,
+- over-fetching irrelevant code,
+- losing critical instructions between turns,
+- pretending rough estimates are real token counts.
+
+This package targets those failure modes directly.
+
+## What it does
+
+### 1. Exact token counting by provider
+
+Supported behavior today:
+
+- OpenAI-compatible model counting with `js-tiktoken`
+- Anthropic official `count_tokens` path when credentials are available
+- Gemini official `countTokens` path when credentials are available
+
+If a model does not have an exact counter configured, the framework returns `unsupported`.
+It does not fake precision with a heuristic and call it real.
+
+### 2. Hybrid code retrieval
+
+The indexer scans the repository and builds:
+
+- file metadata,
+- AST-derived symbols,
+- imports,
+- exports,
+- call references,
+- chunked file excerpts,
+- BM25 lexical ranking data.
+
+Embeddings are pluggable.
+The current implementation supports:
+
+- `openai` embeddings with `OPENAI_API_KEY`
+- `ollama` embeddings with a local server
+
+If embeddings are not configured, lexical retrieval still works.
+
+### 3. Cached reads
+
+`readFileContext()` stores stable cache references per file hash.
+
+That means a repeated read can come back as:
+
+- `new`
+- `changed`
+- `unchanged`
+
+instead of blindly rehydrating the same file into agent context every time.
+
+### 4. Command proxy
+
+`runCommand()` executes commands and decides whether to:
+
+- return the full output,
+- return a compact structured summary,
+- or persist the full artifact and return a reference.
+
+This is the difference between:
+
+- "here are 900 noisy lines of test output"
+
+and:
+
+- "exit code 1, these are the 3 important failures, full log stored as artifact X"
+
+### 5. Pinned rules
+
+Critical rules are read from `AGENTS.md` and related sources, normalized, and attached to context bundles so the agent keeps seeing the high-priority constraints.
+
+### 6. Benchmarking
+
+The benchmark runner compares optimized retrieval against a baseline and reports:
+
+- task count,
+- regressions,
+- token cost,
+- hit quality,
+- selected files.
 
 ## Installation
 
-Right now the project is distributed through GitHub rather than the npm registry.
+### Option A: install from GitHub
 
-Repository:
+```bash
+npm install github:markyuxx/Codex-Token-Optimizer
+```
 
-- `https://github.com/markyuxx/Codex-Token-Optimizer`
-
-You have three practical installation paths:
-
-### 1. Clone and run locally
-
-Best when you want the simplest setup and full control.
+### Option B: clone and install locally
 
 ```bash
 git clone https://github.com/markyuxx/Codex-Token-Optimizer.git
@@ -40,379 +123,202 @@ cd Codex-Token-Optimizer
 npm install
 ```
 
-Then run the CLI against the target repo:
+### Option C: use it without global install
 
 ```bash
-node ./bin/agent-index.js build --root ../my-project
-node ./bin/agent-index.js summary --root ../my-project
+npx github:markyuxx/Codex-Token-Optimizer build
 ```
 
-### 2. Install globally from GitHub
+## Requirements
 
-Best when you want the `agent-index` command available everywhere.
+- Node.js 18 or newer
+- npm 9 or newer recommended
 
-```bash
-npm install -g git+https://github.com/markyuxx/Codex-Token-Optimizer.git
-```
+Optional credentials:
 
-Then use it directly:
-
-```bash
-agent-index build --root ../my-project
-agent-index search "auth routes" --root ../my-project
-```
-
-### 3. Download a GitHub release asset
-
-Best when you want a fixed snapshot version.
-
-1. Download the latest release from GitHub.
-2. Extract it locally.
-3. Run `npm install`.
-4. Use `node ./bin/agent-index.js ...` or install it globally from the extracted folder with `npm install -g .`.
-
-## How to enable always-on mode
-
-`Codex-Token-Optimizer` does not force itself on every repo automatically. A repository becomes "always-on" only after you run a build inside that target repo.
-
-The activation flow is:
-
-1. Start in the repository you want to optimize.
-2. Run `agent-index build` or `node ./bin/agent-index.js build`.
-3. Let it replace the long root `AGENTS.md` with the compact generated one.
-4. Commit both the compact `AGENTS.md` and `.agent-index/`.
-
-Example:
-
-```bash
-cd ../my-project
-agent-index build
-git add AGENTS.md .agent-index
-git commit -m "Enable compact AGENTS index"
-```
-
-After that, the repo behaves in the intended always-on style:
-
-- agents read the compact `AGENTS.md` first
-- deeper context is pulled from `.agent-index/`
-- searches happen through `agent-index search`, `file`, `symbol`, or MCP
-- stale context can be detected with `agent-index check`
-
-If you want the mode to stay healthy over time, rebuild the index when:
-
-- `AGENTS.md` changes significantly
-- commands or folder structure change
-- new subsystems are added
-- the staleness check starts failing
-
-Recommended maintenance:
-
-```bash
-agent-index build
-agent-index check
-agent-index benchmark
-```
-
-## What it does
-
-When you run `agent-index build` in a repository:
-
-1. It reads the current `AGENTS.md`.
-2. It stores the full original in `.agent-index/AGENTS.full.md`.
-3. It scans the repo and extracts high-signal lines from code and config.
-4. It writes a compact `AGENTS.md` with the most useful commands, contexts, and lookup instructions.
-5. It writes sidecar files in `.agent-index/` for search, symbols, staleness, and summary data.
-
-This creates a two-layer context system:
-
-- `AGENTS.md`: tiny and cheap for repeated prompt injection
-- `.agent-index/*`: dense local retrieval layer for detail on demand
-
-## Implementation layout
-
-The portable export keeps the implementation small and dependency-free:
-
-- `scan.js`: walks the repo and skips obvious binary, cache, media, build, and generated folders
-- `extract.js`: captures high-signal lines such as imports, exports, functions, classes, routes, scripts, MCP servers, and security-sensitive patterns
-- `build.js`: writes the compact `AGENTS.md` plus `index.json`, `files.json`, `symbols.json`, `staleness.json`, and `AGENTS.full.md`
-- `query.js`: returns compact Markdown for topic, file, symbol, and freshness queries
-- `mcp-server.js`: exposes the local index over stdio as MCP tools only
-
-## Repository layout
-
-```text
-.
-├── bin/
-│   └── agent-index.js
-├── src/
-│   ├── build.js
-│   ├── config.js
-│   ├── extract.js
-│   ├── mcp-server.js
-│   ├── query.js
-│   └── scan.js
-└── test/
-    └── fixtures/
-```
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+- `OLLAMA_BASE_URL`
+- `OLLAMA_EMBED_MODEL`
 
 ## Quick start
 
-Clone the repo you want to index, then run the CLI from that repo root.
+### 1. Build the index
 
 ```bash
-npm install
-node ./bin/agent-index.js build
-node ./bin/agent-index.js summary
-node ./bin/agent-index.js search "auth routes"
+npm run build
 ```
 
-If you installed globally, the same flow becomes:
+This creates `.token-optimizer/` with:
+
+- `index.json`
+- `rules.json`
+- `staleness.json`
+- `cache.json`
+- `artifacts/`
+- `benchmark-last.json`
+
+### 2. Query relevant code
 
 ```bash
-agent-index build --root ../my-project
-agent-index summary --root ../my-project
-agent-index search "auth routes" --root ../my-project
+npm run query -- "openai token counting provider"
 ```
 
-You can also target another repo explicitly:
+This returns a context bundle with:
+
+- ranked items,
+- token cost,
+- pinned rules,
+- stable references,
+- truncation signal.
+
+### 3. Read a file through the cache
 
 ```bash
-node ./bin/agent-index.js build --root ../my-project
-node ./bin/agent-index.js search "payments webhook" --root ../my-project
+npm run read -- runtime.js
 ```
 
-## Commands
-
-### `build`
-
-Generate `.agent-index/` and replace `AGENTS.md` with a compact version.
+### 4. Estimate tokens before you send context
 
 ```bash
-node ./bin/agent-index.js build
+npm run tokens -- --model gpt-4o-mini --text "hello world"
 ```
 
-### `check`
-
-Fail if indexed files have changed since the last build.
+### 5. Run a command through the optimizer
 
 ```bash
-node ./bin/agent-index.js check
+npm run exec -- "cmd /c echo optimizer-ok"
 ```
 
-### `benchmark`
-
-Show original vs compact token counts.
+### 6. Run the benchmark
 
 ```bash
-node ./bin/agent-index.js benchmark
+npm run benchmark
 ```
 
-### `summary`
+## CLI commands
 
-Return top-level stats for the current index.
+- `npm run build`
+- `npm run query -- "<query>"`
+- `npm run read -- <path>`
+- `npm run tokens -- --model <model> --text "<text>"`
+- `npm run exec -- "<command>"`
+- `npm run benchmark`
+- `npm run mcp`
+- `npm test`
+
+If the package is installed globally or linked:
 
 ```bash
-node ./bin/agent-index.js summary
+token-optimizer build
+token-optimizer query "token optimizer runtime cache retrieval"
+token-optimizer read src/index.js
+token-optimizer tokens --model gpt-4o-mini --text "hello world"
+token-optimizer exec "cmd /c echo ok"
+token-optimizer benchmark
 ```
 
-### `search`
+## MCP tools
 
-Keyword search across indexed file summaries and signals.
+The MCP server exposes:
+
+- `estimate_tokens`
+- `retrieve_context`
+- `read_file_context`
+- `run_command`
+- `get_rules`
+- `benchmark_run`
+- `staleness`
+- `index_status`
+
+Start it with:
 
 ```bash
-node ./bin/agent-index.js search "event loop promise"
+npm run mcp
 ```
 
-### `file`
+## API usage
 
-Return the indexed high-signal lines for a specific file.
+```js
+const { createRuntime } = require("codex-token-optimizer");
 
-```bash
-node ./bin/agent-index.js file src/server.js
-```
+async function main() {
+  const runtime = createRuntime({ rootDir: process.cwd() });
 
-### `symbol`
+  await runtime.buildIndex();
 
-Find indexed references for a symbol.
+  const bundle = await runtime.retrieveContext("token optimizer runtime", {
+    budget: 900,
+    model: "gpt-4o-mini",
+  });
 
-```bash
-node ./bin/agent-index.js symbol startServer
-```
-
-### `stale`
-
-Check staleness for all indexed files or a subset.
-
-```bash
-node ./bin/agent-index.js stale
-node ./bin/agent-index.js stale src/server.js package.json
-```
-
-### `mcp`
-
-Run the MCP bridge over stdio so external clients can call the search tools.
-
-```bash
-node ./bin/agent-index.js mcp
-```
-
-## MCP interface
-
-The MCP server exposes five local tools:
-
-### `agent_index.search`
-
-Input:
-
-```json
-{ "query": "auth routes", "limit": 8 }
-```
-
-Output:
-
-- compact ranked context blocks
-- file paths
-- line numbers
-- matched symbols and snippets
-
-### `agent_index.file_context`
-
-Input:
-
-```json
-{ "path": "src/server.js", "maxLines": 18 }
-```
-
-Output:
-
-- imports
-- exports
-- functions and classes
-- routes
-- selected high-signal lines
-
-### `agent_index.symbol_context`
-
-Input:
-
-```json
-{ "symbol": "startServer" }
-```
-
-Output:
-
-- indexed definitions and usages found by static scan
-
-### `agent_index.staleness`
-
-Input:
-
-```json
-{ "paths": ["src/server.js", "package.json"] }
-```
-
-Output:
-
-- fresh or stale status from relative path, size, mtime, and sha256 hash
-
-### `agent_index.summary`
-
-Input:
-
-```json
-{}
-```
-
-Output:
-
-- generated timestamp
-- compression ratio
-- stale count
-- compact repo map
-
-## Output files
-
-After `build`, the target repository gets:
-
-```text
-.agent-index/
-├── AGENTS.full.md
-├── files.json
-├── index.json
-├── staleness.json
-└── symbols.json
-```
-
-## Staleness and compression rules
-
-- Staleness is computed from relative path, file size, `mtimeMs`, and `sha256` content hash.
-- The index lives under `.agent-index/`.
-- The full original instruction set is preserved before replacement.
-- The compact file is intentionally biased toward critical rules, commands, repo map, and query instructions instead of exhaustive prose.
-
-This export does not depend on AST parsers or external indexing services. The first version is deliberately regex-driven and built with Node.js built-ins only so it can be cloned and run with minimal setup churn.
-
-## MCP integration
-
-Example `.mcp.json` entry in the target repository:
-
-```json
-{
-  "mcpServers": {
-    "agent-index": {
-      "command": "node",
-      "args": [
-        "path/to/agent-index/bin/agent-index.js",
-        "mcp"
-      ]
-    }
-  }
+  console.log(bundle.items.map((item) => item.path));
 }
+
+main().catch(console.error);
 ```
 
-Run the MCP server from the repository you want to index, or set `AGENT_INDEX_ROOT`.
+## Project structure
 
-Example with a globally installed CLI:
+- `runtime.js`: top-level facade
+- `api.js`: import surface
+- `index.js`: CLI entry
+- `mcp-server.js`: MCP surface
+- `lib/tokenization.js`: exact token counter providers
+- `lib/retrieval.js`: scanner, parser, chunker, BM25, embeddings
+- `lib/cache.js`: file and command cache
+- `lib/commands.js`: command proxy and structured summaries
+- `lib/benchmark.js`: benchmark runner
+- `tests/token-optimizer.test.js`: runtime verification
 
-```json
-{
-  "mcpServers": {
-    "agent-index": {
-      "command": "agent-index",
-      "args": ["mcp"]
-    }
-  }
-}
-```
+## How to think about installation in a real project
 
-## Local-only design
+If you want to use this seriously, the safest path is:
 
-- No network calls
-- No hosted index
-- No external database
-- No dependency on proprietary services
+1. install it in the repo where the agent works,
+2. build the local index once,
+3. call the CLI or API instead of raw file dumps,
+4. route noisy shell output through `exec`,
+5. wire the MCP server into your local tool stack.
 
-The MCP bridge is stdio-only and meant to run next to the repo you are indexing.
+The package is most useful when it becomes the default path for:
 
-## Recommended workflow
+- reading code,
+- estimating token budgets,
+- retrieving context,
+- handling test logs,
+- preserving critical instructions.
 
-1. Keep your full human-written guidance in `AGENTS.md` while drafting.
-2. Run `agent-index build` when the guidance becomes too large.
-3. Commit the compact `AGENTS.md`.
-4. Regenerate the index whenever the repo changes substantially.
-5. Use `search`, `file`, `symbol`, and `summary` instead of stuffing large files into prompts.
+If you only install it and keep reading files manually with raw shell commands, you lose most of the value.
 
-## Caveats
+## Current limitations
 
-- `build` rewrites `AGENTS.md` in the target repository.
-- The search is intentionally simple and fast; it is not semantic retrieval.
-- Large binary files and oversized files are skipped on purpose.
-- The current version is optimized for local repos and agent workflows, not for hosted indexing.
+- Exact OpenAI token counting is local and robust; Anthropic and Gemini exact counting need valid credentials and network access.
+- Embeddings are pluggable, but lexical retrieval remains the fallback when no embedding provider is configured.
+- The benchmark currently measures retrieval quality and token cost, not end-to-end model success with an external judge.
+- The command proxy is only as global as your workflow; if your team bypasses it, the optimizer cannot save those tokens for you.
 
-## Development
+## Testing
 
 ```bash
 npm test
 ```
 
-The smoke test builds an index from a small fixture repo and verifies search, file lookup, symbol lookup, benchmark, and freshness.
+The test suite validates:
+
+- index build behavior,
+- repeated file-read caching,
+- token-budgeted retrieval bundles,
+- command summarization with stored artifacts,
+- supported vs unsupported token counting.
+
+## Philosophy
+
+This project is intentionally honest.
+
+If something is exact, it says exact.
+If something is unsupported, it says unsupported.
+If a workflow still depends on user discipline, it does not pretend to be magic.
+
+That honesty is the whole point.

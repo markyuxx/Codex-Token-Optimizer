@@ -1,26 +1,49 @@
 {
   "name": "codex-token-optimizer",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Compacta AGENTS.md y genera un indice local de alto valor para reducir tokens en repos grandes.",
+  "version": "0.2.0",
+  "description": "Hybrid retrieval and context reduction framework for coding agents.",
+  "main": "api.js",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "api.js",
+    "index.js",
+    "runtime.js",
+    "mcp-server.js",
+    "lib",
+    "bin",
+    "benchmarks",
+    "tests",
+    "README.md"
+  ],
   "bin": {
-    "agent-index": "./bin/agent-index.js"
+    "token-optimizer": "bin/token-optimizer.js"
   },
   "scripts": {
-    "build": "node ./bin/agent-index.js build",
-    "check": "node ./bin/agent-index.js check",
-    "benchmark": "node ./bin/agent-index.js benchmark",
-    "summary": "node ./bin/agent-index.js summary",
-    "test": "node ./test/smoke.js && node ./test/mcp-smoke.js"
+    "build": "node index.js build",
+    "query": "node index.js query",
+    "read": "node index.js read",
+    "tokens": "node index.js tokens",
+    "exec": "node index.js exec",
+    "benchmark": "node index.js benchmark",
+    "mcp": "node mcp-server.js",
+    "test": "node --test tests/token-optimizer.test.js"
   },
   "keywords": [
-    "agents",
-    "context",
+    "codex",
+    "token",
+    "optimizer",
+    "rag",
     "mcp",
-    "tokens",
-    "search",
-    "indexing"
+    "retrieval",
+    "context"
   ],
-  "license": "MIT"
+  "author": "markyuxx",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/parser": "^7.29.7",
+    "js-tiktoken": "^1.0.21"
+  }
 }

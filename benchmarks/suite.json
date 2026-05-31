@@ -1,0 +1,18 @@
+{
+  "tasks": [
+    {
+      "name": "find token optimizer runtime",
+      "query": "createRuntime indexStatus staleness getPinnedRules",
+      "expectedPaths": [
+        "runtime.js"
+      ]
+    },
+    {
+      "name": "find tokenization provider",
+      "query": "createTokenCounterRegistry js-tiktoken countMessages inferProvider",
+      "expectedPaths": [
+        "lib/tokenization.js"
+      ]
+    }
+  ]
+}

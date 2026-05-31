@@ -1,4 +1,6 @@
-.agent-index/
 node_modules/
-.DS_Store
-Thumbs.db
+.token-optimizer/
+.token-optimizer-test/
+coverage/
+artifacts/
+npm-debug.log*
