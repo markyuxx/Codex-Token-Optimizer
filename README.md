@@ -65,12 +65,14 @@ Allowed by default:
 - `npm run test`
 - `npm run lint`
 - `npm run build`
+- `npm run check`
 - `npm run bench:smoke`
 - `node --version`
 - `npm --version`
 - `git status`
 - `git diff`
 - `git log`
+- `ls` / `dir` with a simple repo-local path
 
 Blocked in safe mode:
 
@@ -79,6 +81,9 @@ Blocked in safe mode:
 - Inline interpreters such as `node -e`, `python -c`, `ruby -e`.
 - Dangerous operations such as `rm`, `del`, `rmdir`, `git reset --hard`, `git clean`, `git push --force`, `sudo`, `curl | sh`, `wget | sh`.
 - Obvious secret-file reads such as `.env`, SSH keys, `.pem`, `.key`, `.p12`, `.pfx`.
+- Network/shell-adjacent commands such as `curl`, `wget`, `ssh`, `scp`, `env` and `printenv`.
+
+`runCommand` responses include stable fields for agents: `command`, `args`, `cwd`, `safeMode`, `allowed`, `blockedReason`, `timedOut`, `stdoutPreview`, `stderrPreview`, `errors`, `warnings`, `failedTests`, `stackTraces`, `fileReferences`, `artifactPath`, `tokensBefore`, `tokensReturned` and `tokensSaved`.
 
 Unsafe mode exists for trusted local use only:
 
@@ -127,7 +132,8 @@ Useful flags:
 - `--safe-mode` keeps the default safe runner behavior.
 - `--unsafe` permits shell execution for trusted commands.
 - `--allow-command` adds regex allowlist entries for safe mode.
-- `--max-tokens`, `--max-bytes`, `--timeout`, `--json`, `--include-content`, `--force`, `--excludes`.
+- `--timeout`, `--max-stdout-bytes`, `--max-stderr-bytes`, `--max-lines`, `--max-artifact-bytes`, `--max-command-length`, `--max-args`, `--max-arg-length`.
+- `--max-tokens`, `--max-bytes`, `--json`, `--include-content`, `--force`, `--cwd`, `--model`, `--provider`, `--excludes`.
 
 ## MCP
 
@@ -157,6 +163,7 @@ Run:
 ```bash
 npm run bench:smoke
 npm run bench
+npm run bench:full
 ```
 
 The benchmark writes:
@@ -165,7 +172,7 @@ The benchmark writes:
 - `reports/benchmark-latest.md`
 - `.token-optimizer/benchmark-last.json`
 
-It checks retrieval hits, budget compliance, cache savings and command compaction savings. If thresholds fail under `--fail-on-regression`, the process exits non-zero.
+It checks retrieval hits, symbol lookup, class lookup, multi-file context, noisy queries, small budgets, lockfile confusion, budget compliance, cache savings and command compaction savings. If thresholds fail under `--fail-on-regression`, the process exits non-zero.
 
 ## Limitations
 

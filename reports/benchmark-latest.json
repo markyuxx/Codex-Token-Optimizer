@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-05-31T15:13:17.827Z",
+  "generatedAt": "2026-05-31T17:20:37.561Z",
   "taskCount": 5,
   "regressions": 0,
   "maturity": "production partial",
   "failedThresholds": [],
   "probes": {
     "cache": {
-      "tokensSaved": 3546,
+      "tokensSaved": 4109,
       "path": "runtime.js"
     },
     "commandCompaction": {
@@ -17,24 +17,29 @@
   },
   "metrics": {
     "tokenizer": "js-tiktoken",
-    "tokensBaseline": 235255,
-    "tokensOptimized": 2286,
-    "tokensSaved": 232969,
-    "savingsRatio": 0.9903,
+    "tokensBaseline": 264775,
+    "tokensOptimized": 2295,
+    "tokensSaved": 262480,
+    "savingsRatio": 0.9913,
     "averageRecallAtK": 0.9,
-    "averagePrecisionAtK": 0.45,
+    "averagePrecisionAtK": 0.4,
     "embeddingCost": 0,
-    "indexTimeMs": 147,
-    "totalTimeMs": 36048,
-    "indexBytes": 972859,
+    "indexTimeMs": 218,
+    "indexSizeBytes": 1099799,
+    "totalTimeMs": 39799,
+    "indexBytes": 1099799,
+    "cacheSavings": 4109,
+    "commandCompactionSavings": 3509,
+    "budgetRespected": true,
+    "staleWarningsDetected": 0,
     "savingsBy": {
-      "retrieval": 232969,
-      "cache": 3546,
+      "retrieval": 262480,
+      "cache": 4109,
       "commandCompaction": 3509,
-      "pinnedRules": 2286,
+      "pinnedRules": 2295,
       "embeddings": 0,
-      "baseline": 235255,
-      "returned": 2286
+      "baseline": 264775,
+      "returned": 2295
     }
   },
   "tasks": [
@@ -42,7 +47,7 @@
       "name": "find token optimizer runtime",
       "query": "createRuntime indexStatus staleness getPinnedRules",
       "optimized": {
-        "tokenCost": 500,
+        "tokenCost": 499,
         "paths": [
           "mcp-server.js",
           "runtime.js",
@@ -53,16 +58,18 @@
         "overBudget": false
       },
       "baseline": {
-        "tokenCost": 47051,
+        "tokenCost": 52955,
         "paths": [
           ".github/workflows/ci.yml",
           ".gitignore",
           "api.js",
           "AUDIT.md",
           "benchmarks/fixtures/long-log.js",
+          "benchmarks/fixtures/sample-app.js",
           "benchmarks/suite.json",
           "bin/token-optimizer.js",
           "CHANGELOG.md",
+          "CONTRIBUTING.md",
           "index.js",
           "lib/benchmark.js",
           "lib/cache.js",
@@ -84,17 +91,23 @@
           "tests/helpers.js",
           "tests/mcp.test.js",
           "tests/runtime.test.js",
-          "tests/tokenization.test.js"
+          "tests/tokenization.test.js",
+          "tests/version.test.js"
         ],
         "hit": true
       },
-      "tokensBaseline": 47051,
-      "tokensOptimized": 500,
-      "tokensSaved": 46551,
-      "savingsRatio": 0.9894,
+      "tokensBaseline": 52955,
+      "tokensOptimized": 499,
+      "tokensSaved": 52456,
+      "savingsPercent": 99.06,
+      "savingsRatio": 0.9906,
       "precisionAtK": 0.25,
       "recallAtK": 1,
-      "queryTimeMs": 5269,
+      "expectedFilesFound": 1,
+      "expectedSymbolsFound": 0,
+      "budgetRespected": true,
+      "staleWarningsDetected": 0,
+      "queryTimeMs": 5790,
       "embeddingCost": 0,
       "success": "pass",
       "modelEvaluation": "unsupported-without-external-evaluator"
@@ -111,16 +124,18 @@
         "overBudget": false
       },
       "baseline": {
-        "tokenCost": 47051,
+        "tokenCost": 52955,
         "paths": [
           ".github/workflows/ci.yml",
           ".gitignore",
           "api.js",
           "AUDIT.md",
           "benchmarks/fixtures/long-log.js",
+          "benchmarks/fixtures/sample-app.js",
           "benchmarks/suite.json",
           "bin/token-optimizer.js",
           "CHANGELOG.md",
+          "CONTRIBUTING.md",
           "index.js",
           "lib/benchmark.js",
           "lib/cache.js",
@@ -142,17 +157,23 @@
           "tests/helpers.js",
           "tests/mcp.test.js",
           "tests/runtime.test.js",
-          "tests/tokenization.test.js"
+          "tests/tokenization.test.js",
+          "tests/version.test.js"
         ],
         "hit": true
       },
-      "tokensBaseline": 47051,
+      "tokensBaseline": 52955,
       "tokensOptimized": 296,
-      "tokensSaved": 46755,
-      "savingsRatio": 0.9937,
+      "tokensSaved": 52659,
+      "savingsPercent": 99.44,
+      "savingsRatio": 0.9944,
       "precisionAtK": 1,
       "recallAtK": 1,
-      "queryTimeMs": 907,
+      "expectedFilesFound": 1,
+      "expectedSymbolsFound": 0,
+      "budgetRespected": true,
+      "staleWarningsDetected": 0,
+      "queryTimeMs": 1281,
       "embeddingCost": 0,
       "success": "pass",
       "modelEvaluation": "unsupported-without-external-evaluator"
@@ -161,26 +182,29 @@
       "name": "find safe command runner",
       "query": "safeMode spawn allowlist dangerous shell syntax runCommand",
       "optimized": {
-        "tokenCost": 498,
+        "tokenCost": 500,
         "paths": [
+          "benchmarks/suite.json",
           "lib/benchmark.js",
           "lib/commands.js",
-          "benchmarks/suite.json"
+          "CHANGELOG.md"
         ],
         "hit": true,
         "overBudget": false
       },
       "baseline": {
-        "tokenCost": 47051,
+        "tokenCost": 52955,
         "paths": [
           ".github/workflows/ci.yml",
           ".gitignore",
           "api.js",
           "AUDIT.md",
           "benchmarks/fixtures/long-log.js",
+          "benchmarks/fixtures/sample-app.js",
           "benchmarks/suite.json",
           "bin/token-optimizer.js",
           "CHANGELOG.md",
+          "CONTRIBUTING.md",
           "index.js",
           "lib/benchmark.js",
           "lib/cache.js",
@@ -202,17 +226,23 @@
           "tests/helpers.js",
           "tests/mcp.test.js",
           "tests/runtime.test.js",
-          "tests/tokenization.test.js"
+          "tests/tokenization.test.js",
+          "tests/version.test.js"
         ],
         "hit": true
       },
-      "tokensBaseline": 47051,
-      "tokensOptimized": 498,
-      "tokensSaved": 46553,
-      "savingsRatio": 0.9894,
-      "precisionAtK": 0.3333,
+      "tokensBaseline": 52955,
+      "tokensOptimized": 500,
+      "tokensSaved": 52455,
+      "savingsPercent": 99.06,
+      "savingsRatio": 0.9906,
+      "precisionAtK": 0.25,
       "recallAtK": 1,
-      "queryTimeMs": 7353,
+      "expectedFilesFound": 1,
+      "expectedSymbolsFound": 0,
+      "budgetRespected": true,
+      "staleWarningsDetected": 0,
+      "queryTimeMs": 6659,
       "embeddingCost": 0,
       "success": "pass",
       "modelEvaluation": "unsupported-without-external-evaluator"
@@ -221,26 +251,29 @@
       "name": "find cache repeated reads",
       "query": "rememberFileRead metadata only unchanged cache tokensSaved",
       "optimized": {
-        "tokenCost": 499,
+        "tokenCost": 500,
         "paths": [
           "lib/cache.js",
           "lib/benchmark.js",
-          "benchmarks/suite.json"
+          "benchmarks/suite.json",
+          "CHANGELOG.md"
         ],
         "hit": true,
         "overBudget": false
       },
       "baseline": {
-        "tokenCost": 47051,
+        "tokenCost": 52955,
         "paths": [
           ".github/workflows/ci.yml",
           ".gitignore",
           "api.js",
           "AUDIT.md",
           "benchmarks/fixtures/long-log.js",
+          "benchmarks/fixtures/sample-app.js",
           "benchmarks/suite.json",
           "bin/token-optimizer.js",
           "CHANGELOG.md",
+          "CONTRIBUTING.md",
           "index.js",
           "lib/benchmark.js",
           "lib/cache.js",
@@ -262,17 +295,23 @@
           "tests/helpers.js",
           "tests/mcp.test.js",
           "tests/runtime.test.js",
-          "tests/tokenization.test.js"
+          "tests/tokenization.test.js",
+          "tests/version.test.js"
         ],
         "hit": true
       },
-      "tokensBaseline": 47051,
-      "tokensOptimized": 499,
-      "tokensSaved": 46552,
-      "savingsRatio": 0.9894,
-      "precisionAtK": 0.3333,
+      "tokensBaseline": 52955,
+      "tokensOptimized": 500,
+      "tokensSaved": 52455,
+      "savingsPercent": 99.06,
+      "savingsRatio": 0.9906,
+      "precisionAtK": 0.25,
       "recallAtK": 0.5,
-      "queryTimeMs": 7984,
+      "expectedFilesFound": 1,
+      "expectedSymbolsFound": 0,
+      "budgetRespected": true,
+      "staleWarningsDetected": 0,
+      "queryTimeMs": 6688,
       "embeddingCost": 0,
       "success": "pass",
       "modelEvaluation": "unsupported-without-external-evaluator"
@@ -281,26 +320,29 @@
       "name": "avoid lockfile confusion",
       "query": "package lock should not dominate retrieval command symbols",
       "optimized": {
-        "tokenCost": 493,
+        "tokenCost": 500,
         "paths": [
           "lib/benchmark.js",
           "lib/retrieval.js",
-          "benchmarks/suite.json"
+          "benchmarks/suite.json",
+          "SECURITY.md"
         ],
         "hit": true,
         "overBudget": false
       },
       "baseline": {
-        "tokenCost": 47051,
+        "tokenCost": 52955,
         "paths": [
           ".github/workflows/ci.yml",
           ".gitignore",
           "api.js",
           "AUDIT.md",
           "benchmarks/fixtures/long-log.js",
+          "benchmarks/fixtures/sample-app.js",
           "benchmarks/suite.json",
           "bin/token-optimizer.js",
           "CHANGELOG.md",
+          "CONTRIBUTING.md",
           "index.js",
           "lib/benchmark.js",
           "lib/cache.js",
@@ -322,17 +364,23 @@
           "tests/helpers.js",
           "tests/mcp.test.js",
           "tests/runtime.test.js",
-          "tests/tokenization.test.js"
+          "tests/tokenization.test.js",
+          "tests/version.test.js"
         ],
         "hit": true
       },
-      "tokensBaseline": 47051,
-      "tokensOptimized": 493,
-      "tokensSaved": 46558,
-      "savingsRatio": 0.9895,
-      "precisionAtK": 0.3333,
+      "tokensBaseline": 52955,
+      "tokensOptimized": 500,
+      "tokensSaved": 52455,
+      "savingsPercent": 99.06,
+      "savingsRatio": 0.9906,
+      "precisionAtK": 0.25,
       "recallAtK": 1,
-      "queryTimeMs": 8121,
+      "expectedFilesFound": 1,
+      "expectedSymbolsFound": 0,
+      "budgetRespected": true,
+      "staleWarningsDetected": 0,
+      "queryTimeMs": 12146,
       "embeddingCost": 0,
       "success": "pass",
       "modelEvaluation": "unsupported-without-external-evaluator"

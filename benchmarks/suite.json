@@ -35,6 +35,55 @@
       "expectedPaths": [
         "lib/retrieval.js"
       ]
+    },
+    {
+      "name": "find concrete fixture function",
+      "query": "calculateInvoice totalCents quantity unitCents",
+      "expectedPaths": [
+        "benchmarks/fixtures/sample-app.js"
+      ],
+      "expectedSymbols": [
+        "calculateInvoice"
+      ]
+    },
+    {
+      "name": "find concrete fixture class",
+      "query": "PaymentGateway authorizePayment invoice currency",
+      "expectedPaths": [
+        "benchmarks/fixtures/sample-app.js"
+      ],
+      "expectedSymbols": [
+        "PaymentGateway"
+      ]
+    },
+    {
+      "name": "multi-file runtime and cache context",
+      "query": "runCommand cache rememberCommand artifactRef readFileContext",
+      "expectedPaths": [
+        "runtime.js",
+        "lib/cache.js"
+      ]
+    },
+    {
+      "name": "ambiguous query still finds command security",
+      "query": "security safe blocked allowed command output",
+      "expectedPaths": [
+        "lib/commands.js"
+      ]
+    },
+    {
+      "name": "noisy query still finds stale retrieval",
+      "query": "blah blah bananas staleWarnings staleness queryIndex generated files changed warning",
+      "expectedPaths": [
+        "runtime.js",
+        "lib/retrieval.js"
+      ]
+    },
+    {
+      "name": "small budget still respects limit",
+      "query": "safeMode spawn allowlist dangerous shell syntax runCommand",
+      "budget": 120,
+      "expectedPaths": []
     }
   ]
 }

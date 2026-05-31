@@ -11,7 +11,9 @@ Resolved:
 - Safe mode rejects shell syntax, shell wrappers, inline interpreters and dangerous commands.
 - Safe mode ships with a narrow allowlist for low-risk development commands.
 - Runtime rejects command cwd values outside the configured repo root.
-- Command outputs use byte caps, line caps, timeout handling, artifact truncation markers and secret redaction.
+- Command outputs use byte caps, line caps, argument caps, timeout handling, artifact truncation markers and secret redaction.
+- CLI and MCP expose safe-mode, unsafe, allowlist and output/artifact/argument limit options.
+- MCP server version comes from `package.json`.
 - Filesystem helpers resolve real paths, reject symlink escapes and skip common secret, binary, dependency, build, cache, lockfile and oversized files.
 
 Residual risk:
@@ -42,6 +44,7 @@ Resolved:
 - Indexing extracts JS/TS symbols, imports, exports and calls with a real parser.
 - Retrieval combines BM25, symbols, exact-match boosts, source/test weighting and lockfile/minified penalties.
 - Bundles enforce token budgets and report stale file warnings.
+- Bundles report truncated and skipped chunks.
 
 Residual risk:
 
@@ -54,6 +57,7 @@ Resolved:
 
 - Benchmarks now write JSON and Markdown reports under `reports/`.
 - Benchmark probes cover retrieval, repeated-read cache savings and large command-output compaction.
+- Benchmark tasks cover function lookup, symbol lookup, class lookup, multi-file context, noisy queries, small budget handling and lockfile confusion.
 - `bench:smoke`, `bench` and `check` run local gates with regression thresholds.
 
 Residual risk:

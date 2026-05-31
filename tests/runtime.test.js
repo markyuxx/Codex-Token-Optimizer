@@ -37,8 +37,12 @@ test("retrieveContext enforces requested budget and reports stale warnings", asy
   assert.ok(bundle.usedTokens <= 160);
   assert.equal(bundle.overBudget, false);
   assert.ok(bundle.staleWarnings.some((warning) => warning.path === "src/server.js"));
-  assert.ok(bundle.metrics.savingsBy.retrieval > 0);
-  assert.ok(bundle.metrics.savingsBy.pinnedRules > 0);
+  assert.ok(bundle.truncatedChunks >= 0);
+  assert.ok(bundle.skippedChunks >= 0);
+  assert.ok(bundle.metrics.retrievalTokensSaved > 0);
+  assert.ok(bundle.metrics.pinnedRulesTokenCost > 0);
+  assert.ok(bundle.metrics.totalTokensSaved >= bundle.metrics.retrievalTokensSaved);
+  assert.ok(bundle.metrics.savingsPercent > 0);
 });
 
 test("retrieveContext prefers source symbol chunks over tests and lockfiles", async () => {
@@ -64,5 +68,20 @@ test("retrieveContext tiny budgets terminate and mark truncation without hanging
   ]);
 
   assert.ok(bundle.usedTokens <= 45);
+  assert.equal(bundle.overBudget, false);
+  assert.ok(bundle.truncatedChunks + bundle.skippedChunks > 0);
+});
+
+test("retrieveContext accounts for pinned rules and skips when rules exhaust budget", async () => {
+  const root = makeTempRepo();
+  const runtime = createRuntime({ rootDir: root, stateDirName: ".token-optimizer-test" });
+
+  await runtime.buildIndex();
+  const bundle = await runtime.retrieveContext("startServer helper implementation detail", { budget: 5, model: "gpt-4o-mini" });
+
+  assert.equal(bundle.requestedBudget, 5);
+  assert.ok(bundle.usedTokens <= 5);
+  assert.equal(bundle.items.length, 0);
+  assert.ok(bundle.skippedChunks > 0);
   assert.equal(bundle.overBudget, false);
 });

@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+const packageJson = require("../package.json");
 const { makeTempRepo } = require("./helpers");
 
 function sendLine(child, request) {
@@ -38,10 +39,17 @@ test("MCP initializes, lists tools, and rejects shell syntax in run_command", as
     sendLine(child, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
     const init = await waitForJson(child);
     assert.equal(init.result.serverInfo.name, "token-optimizer");
+    assert.equal(init.result.serverInfo.version, packageJson.version);
 
     sendLine(child, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const tools = await waitForJson(child);
-    assert.ok(tools.result.tools.some((tool) => tool.name === "run_command"));
+    const runCommandTool = tools.result.tools.find((tool) => tool.name === "run_command");
+    assert.ok(runCommandTool);
+    assert.ok(runCommandTool.inputSchema.properties.cmd);
+    assert.ok(runCommandTool.inputSchema.properties.args);
+    assert.ok(runCommandTool.inputSchema.properties.allowlist);
+    assert.ok(runCommandTool.inputSchema.properties.maxStdoutBytes);
+    assert.ok(runCommandTool.inputSchema.properties.maxArtifactBytes);
 
     sendLine(child, {
       jsonrpc: "2.0",
@@ -52,7 +60,7 @@ test("MCP initializes, lists tools, and rejects shell syntax in run_command", as
     const blocked = await waitForJson(child);
     const body = JSON.parse(blocked.result.content[0].text);
     assert.equal(body.status, "blocked");
-    assert.match(body.reason, /shell syntax/i);
+    assert.match(body.blockedReason, /shell syntax/i);
   } finally {
     child.kill();
   }

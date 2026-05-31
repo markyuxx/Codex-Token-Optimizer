@@ -33,14 +33,49 @@ function parseList(value) {
 }
 
 function parseAllowlist(flags) {
-  const entries = parseList(flags["allow-command"]);
+  const entries = parseList(flags["allow-command"] || flags.allowlist);
   return entries.length ? entries.map((entry) => new RegExp(entry)) : undefined;
+}
+
+function printResult(value, flags = {}) {
+  if (truthy(flags.json)) {
+    console.log(JSON.stringify(value, null, 2));
+    return;
+  }
+  if (value && typeof value === "object" && "status" in value && "summary" in value) {
+    if (value.safeMode === false) console.log("WARNING: UNSAFE MODE enabled. Command ran with shell semantics.");
+    console.log(`status: ${value.status}`);
+    if (value.blockedReason) console.log(`blockedReason: ${value.blockedReason}`);
+    if (value.exitCode !== undefined) console.log(`exitCode: ${value.exitCode}`);
+    if (value.durationMs !== undefined) console.log(`durationMs: ${value.durationMs}`);
+    if (value.stdoutPreview) console.log(`stdout:\n${value.stdoutPreview}`);
+    if (value.stderrPreview) console.log(`stderr:\n${value.stderrPreview}`);
+    if (value.summary && !value.stdoutPreview && !value.stderrPreview) console.log(value.summary);
+    return;
+  }
+  console.log(JSON.stringify(value, null, 2));
 }
 
 function parseExecArgs(argv) {
   const flags = {};
   const commandParts = [];
-  const valueFlags = new Set(["cwd", "model", "provider", "allow-command", "max-tokens", "max-bytes", "max-lines", "timeout"]);
+  const valueFlags = new Set([
+    "cwd",
+    "model",
+    "provider",
+    "allow-command",
+    "allowlist",
+    "max-tokens",
+    "max-bytes",
+    "max-lines",
+    "max-stdout-bytes",
+    "max-stderr-bytes",
+    "max-artifact-bytes",
+    "max-command-length",
+    "max-args",
+    "max-arg-length",
+    "timeout",
+  ]);
   const boolFlags = new Set(["safe-mode", "unsafe", "json"]);
   for (let index = 1; index < argv.length; index += 1) {
     const value = argv[index];
@@ -113,9 +148,15 @@ async function main(argv = process.argv.slice(2)) {
       allowlist: parseAllowlist(execFlags),
       timeoutMs: execFlags.timeout ? Number(execFlags.timeout) : undefined,
       maxBytes: execFlags["max-bytes"] ? Number(execFlags["max-bytes"]) : undefined,
+      maxStdoutBytes: execFlags["max-stdout-bytes"] ? Number(execFlags["max-stdout-bytes"]) : undefined,
+      maxStderrBytes: execFlags["max-stderr-bytes"] ? Number(execFlags["max-stderr-bytes"]) : undefined,
+      maxArtifactBytes: execFlags["max-artifact-bytes"] ? Number(execFlags["max-artifact-bytes"]) : undefined,
+      maxCommandLength: execFlags["max-command-length"] ? Number(execFlags["max-command-length"]) : undefined,
+      maxArgs: execFlags["max-args"] ? Number(execFlags["max-args"]) : undefined,
+      maxArgLength: execFlags["max-arg-length"] ? Number(execFlags["max-arg-length"]) : undefined,
       maxLines: execFlags["max-lines"] ? Number(execFlags["max-lines"]) : undefined,
     });
-    console.log(JSON.stringify(result, null, 2));
+    printResult(result, execFlags);
     return;
   }
 

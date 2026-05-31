@@ -213,6 +213,8 @@ function createRuntime(options = {}) {
       let remaining = Math.max(budget - ruleCost, 0);
       const items = [];
       const seenRefs = [];
+      let truncatedChunks = 0;
+      let skippedChunks = 0;
 
       for (const entry of rankedFiles) {
         const chunk = entry.bestChunk;
@@ -232,8 +234,12 @@ function createRuntime(options = {}) {
             charLimit = Math.floor(charLimit * 0.65);
           }
           overBudget = chunkCost > remaining;
+          if (!overBudget) truncatedChunks += 1;
         }
-        if (overBudget) break;
+        if (overBudget) {
+          skippedChunks += 1;
+          continue;
+        }
         remaining -= chunkCost;
         const ref = `chunk:${chunk.id}`;
         seenRefs.push(ref);
@@ -253,6 +259,7 @@ function createRuntime(options = {}) {
         .filter((item) => staleSet.has(item.path))
         .map((item) => ({ path: item.path, warning: "File changed since the last index build; reindex is recommended." }));
       const usedTokens = budget - remaining;
+      if (items.length < rankedFiles.length) skippedChunks += rankedFiles.length - items.length - skippedChunks;
 
       return {
         query,
@@ -264,6 +271,8 @@ function createRuntime(options = {}) {
         rules,
         seenRefs,
         staleWarnings,
+        truncatedChunks,
+        skippedChunks: Math.max(skippedChunks, 0),
         truncated: items.length < rankedFiles.length,
         tokenCost: usedTokens,
         metrics: options.skipMetrics ? null : await this.contextMetrics({
@@ -283,26 +292,40 @@ function createRuntime(options = {}) {
         return {
           status: "blocked",
           reason: error.message,
+          blockedReason: error.message,
           exitCode: null,
           durationMs: 0,
+          timedOut: false,
+          command: typeof command === "string" ? command : command?.cmd || "",
+          args: Array.isArray(command?.args) ? command.args : [],
+          cwd: options.cwd || baseDir,
+          allowed: false,
           classification: null,
           tokenCost: 0,
           tokensBefore: 0,
+          tokensReturned: 0,
+          tokensSaved: 0,
           summary: "",
+          stdoutPreview: "",
+          stderrPreview: "",
           errors: [],
           warnings: [],
           failedTests: [],
           stackTraces: [],
           filesMentioned: [],
+          fileReferences: [],
           truncated: false,
           artifactRef: null,
+          artifactPath: null,
           artifactTruncated: false,
           safeMode: options.safeMode !== false && options.unsafe !== true,
           metrics: {
             baselineTokens: 0,
             returnedTokens: 0,
+            totalTokensSaved: 0,
             commandCompactionTokensSaved: 0,
-            totalSaved: 0,
+            netTokensSaved: 0,
+            savingsPercent: 0,
           },
           nextActions: ["Use a cwd inside the optimizer root."],
         };
@@ -321,31 +344,48 @@ function createRuntime(options = {}) {
         maxStdoutBytes: options.maxStdoutBytes,
         maxStderrBytes: options.maxStderrBytes,
         maxArtifactBytes: options.maxArtifactBytes,
+        maxCommandLength: options.maxCommandLength,
+        maxArgs: options.maxArgs,
+        maxArgLength: options.maxArgLength,
       });
       if (result.status === "blocked") {
         return {
+          command: result.command,
+          args: result.args,
+          cwd,
+          allowed: false,
           exitCode: null,
           classification: null,
           tokenCost: 0,
           tokensBefore: 0,
+          tokensReturned: 0,
+          tokensSaved: 0,
           summary: "",
+          stdoutPreview: "",
+          stderrPreview: "",
           errors: [],
           warnings: [],
           failedTests: [],
           stackTraces: [],
           filesMentioned: [],
+          fileReferences: [],
           truncated: false,
           artifactRef: null,
+          artifactPath: null,
           artifactTruncated: false,
           durationMs: result.durationMs || 0,
+          timedOut: false,
           status: "blocked",
           reason: result.reason,
+          blockedReason: result.blockedReason || result.reason,
           safeMode: true,
           metrics: {
             baselineTokens: 0,
             returnedTokens: 0,
+            totalTokensSaved: 0,
             commandCompactionTokensSaved: 0,
-            totalSaved: 0,
+            netTokensSaved: 0,
+            savingsPercent: 0,
           },
           nextActions: ["Review the command allowlist or rerun with unsafe:true only if you trust the command."],
         };
@@ -356,32 +396,46 @@ function createRuntime(options = {}) {
       const baselineTokens = countFromResult(fullTokenEstimate);
       const commandCompactionTokensSaved = baselineTokens !== null && returnedTokens !== null ? Math.max(baselineTokens - returnedTokens, 0) : 0;
       let artifactRef = null;
+      let artifactPath = null;
       if (result.truncated || options.persistArtifact !== false) {
         const artifact = cache.rememberCommand(result.command || JSON.stringify(command), result.artifact || result.combined || "");
         artifactRef = artifact.ref;
+        artifactPath = path.relative(baseDir, artifact.artifactPath).replace(/\\/g, "/");
       }
       return {
+        command: result.command,
+        args: result.args,
+        cwd,
+        allowed: result.allowed,
         exitCode: result.exitCode,
         durationMs: result.durationMs,
+        timedOut: result.timedOut,
         classification: result.classification,
         tokenCost: returnedTokens,
         tokensBefore: baselineTokens,
+        tokensReturned: returnedTokens,
+        tokensSaved: commandCompactionTokensSaved,
         summary: result.summary,
+        stdoutPreview: result.stdoutPreview,
+        stderrPreview: result.stderrPreview,
         errors: result.errors,
         warnings: result.warnings,
         failedTests: result.failedTests,
         stackTraces: result.stackTraces,
         filesMentioned: result.filesMentioned,
+        fileReferences: result.fileReferences,
         truncated: result.truncated,
         artifactRef,
+        artifactPath,
         artifactTruncated: result.artifactTruncated,
         status: result.status,
         safeMode: result.safeMode,
         metrics: {
           baselineTokens,
           returnedTokens,
+          totalTokensSaved: commandCompactionTokensSaved,
           commandCompactionTokensSaved,
-          totalSaved: commandCompactionTokensSaved,
+          netTokensSaved: commandCompactionTokensSaved,
           savingsPercent: baselineTokens ? Number(((commandCompactionTokensSaved / baselineTokens) * 100).toFixed(2)) : 0,
         },
         nextActions: result.errors.length ? ["Inspect the stored artifact or rerun the command with narrower scope."] : [],
@@ -400,9 +454,19 @@ function createRuntime(options = {}) {
       const baselineTokens = baseline.status === "supported" ? baseline.tokenCount : 0;
       return {
         baselineTokens,
+        returnedTokens: optimizedTokens,
         optimizedTokens,
+        totalTokensSaved: Math.max(baselineTokens - optimizedTokens, 0),
         tokensSaved: Math.max(baselineTokens - optimizedTokens, 0),
+        savingsPercent: baselineTokens ? Number((((baselineTokens - optimizedTokens) / baselineTokens) * 100).toFixed(2)) : 0,
         savingsRatio: baselineTokens ? Number(((baselineTokens - optimizedTokens) / baselineTokens).toFixed(4)) : 0,
+        retrievalTokensSaved: Math.max(baselineTokens - optimizedTokens, 0),
+        cacheTokensSaved: 0,
+        commandCompactionTokensSaved: 0,
+        pinnedRulesTokenCost: rules.length ? optimizedTokens : 0,
+        embeddingTokenCost: 0,
+        indexingTokenCost: 0,
+        netTokensSaved: Math.max(baselineTokens - optimizedTokens, 0),
         savingsBy: {
           retrieval: Math.max(baselineTokens - optimizedTokens, 0),
           cache: 0,
