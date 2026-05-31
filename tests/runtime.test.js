@@ -25,6 +25,16 @@ test("readFileContext returns metadata-only unchanged reads with explicit saving
   assert.equal(forced.contentIncluded, true);
 });
 
+test("readFileContext rejects secret and excluded files", async () => {
+  const root = makeTempRepo();
+  fs.writeFileSync(path.join(root, ".env"), "SECRET_TOKEN=abc123", "utf8");
+  fs.writeFileSync(path.join(root, ".npmrc"), "//registry.npmjs.org/:_authToken=abc123", "utf8");
+  const runtime = createRuntime({ rootDir: root, stateDirName: ".token-optimizer-test" });
+
+  await assert.rejects(() => runtime.readFileContext(".env"), /excluded|secret/i);
+  await assert.rejects(() => runtime.readFileContext(".npmrc"), /excluded|secret/i);
+});
+
 test("retrieveContext enforces requested budget and reports stale warnings", async () => {
   const root = makeTempRepo();
   const runtime = createRuntime({ rootDir: root, stateDirName: ".token-optimizer-test" });
@@ -35,6 +45,8 @@ test("retrieveContext enforces requested budget and reports stale warnings", asy
 
   assert.equal(bundle.requestedBudget, 160);
   assert.ok(bundle.usedTokens <= 160);
+  assert.ok(bundle.returnedTokens <= 160);
+  assert.ok(bundle.payloadTokenEstimate.tokenCount <= 160);
   assert.equal(bundle.overBudget, false);
   assert.ok(bundle.staleWarnings.some((warning) => warning.path === "src/server.js"));
   assert.ok(bundle.truncatedChunks >= 0);
@@ -67,8 +79,8 @@ test("retrieveContext tiny budgets terminate and mark truncation without hanging
     new Promise((_, reject) => setTimeout(() => reject(new Error("retrieveContext timed out")), 3000)),
   ]);
 
-  assert.ok(bundle.usedTokens <= 45);
-  assert.equal(bundle.overBudget, false);
+  assert.ok(bundle.returnedTokens >= 45);
+  assert.equal(bundle.overBudget, true);
   assert.ok(bundle.truncatedChunks + bundle.skippedChunks > 0);
 });
 
@@ -80,8 +92,21 @@ test("retrieveContext accounts for pinned rules and skips when rules exhaust bud
   const bundle = await runtime.retrieveContext("startServer helper implementation detail", { budget: 5, model: "gpt-4o-mini" });
 
   assert.equal(bundle.requestedBudget, 5);
-  assert.ok(bundle.usedTokens <= 5);
+  assert.ok(bundle.returnedTokens >= 5);
   assert.equal(bundle.items.length, 0);
   assert.ok(bundle.skippedChunks > 0);
-  assert.equal(bundle.overBudget, false);
+  assert.equal(bundle.overBudget, true);
+});
+
+test("retrieveContext reports overBudget when pinned rules cannot fit compactly", async () => {
+  const root = makeTempRepo();
+  fs.writeFileSync(path.join(root, "AGENTS.md"), `# Huge rules\n\n${"- critical rule ".repeat(2000)}`, "utf8");
+  const runtime = createRuntime({ rootDir: root, stateDirName: ".token-optimizer-test" });
+
+  await runtime.buildIndex();
+  const bundle = await runtime.retrieveContext("startServer helper", { budget: 8, model: "gpt-4o-mini" });
+
+  assert.equal(bundle.overBudget, true);
+  assert.ok(bundle.rulesCompacted);
+  assert.ok(bundle.warnings.some((warning) => /rules exceed/i.test(warning)));
 });

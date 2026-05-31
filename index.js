@@ -37,6 +37,16 @@ function parseAllowlist(flags) {
   return entries.length ? entries.map((entry) => new RegExp(entry)) : undefined;
 }
 
+function parseEnvMap(value) {
+  const env = {};
+  for (const entry of parseList(value)) {
+    const separator = entry.indexOf("=");
+    if (separator <= 0) continue;
+    env[entry.slice(0, separator)] = entry.slice(separator + 1);
+  }
+  return Object.keys(env).length ? env : undefined;
+}
+
 function printResult(value, flags = {}) {
   if (truthy(flags.json)) {
     console.log(JSON.stringify(value, null, 2));
@@ -75,6 +85,8 @@ function parseExecArgs(argv) {
     "max-args",
     "max-arg-length",
     "timeout",
+    "safe-env",
+    "allowed-env",
   ]);
   const boolFlags = new Set(["safe-mode", "unsafe", "json"]);
   for (let index = 1; index < argv.length; index += 1) {
@@ -154,6 +166,8 @@ async function main(argv = process.argv.slice(2)) {
       maxCommandLength: execFlags["max-command-length"] ? Number(execFlags["max-command-length"]) : undefined,
       maxArgs: execFlags["max-args"] ? Number(execFlags["max-args"]) : undefined,
       maxArgLength: execFlags["max-arg-length"] ? Number(execFlags["max-arg-length"]) : undefined,
+      safeEnv: parseEnvMap(execFlags["safe-env"]),
+      allowedEnv: parseEnvMap(execFlags["allowed-env"]),
       maxLines: execFlags["max-lines"] ? Number(execFlags["max-lines"]) : undefined,
     });
     printResult(result, execFlags);

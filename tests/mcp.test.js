@@ -48,6 +48,8 @@ test("MCP initializes, lists tools, and rejects shell syntax in run_command", as
     assert.ok(runCommandTool.inputSchema.properties.cmd);
     assert.ok(runCommandTool.inputSchema.properties.args);
     assert.ok(runCommandTool.inputSchema.properties.allowlist);
+    assert.ok(runCommandTool.inputSchema.properties.safeEnv);
+    assert.ok(runCommandTool.inputSchema.properties.allowedEnv);
     assert.ok(runCommandTool.inputSchema.properties.maxStdoutBytes);
     assert.ok(runCommandTool.inputSchema.properties.maxArtifactBytes);
 

@@ -1,6 +1,6 @@
 # Audit
 
-Current target: `production partial` for `0.4.0`.
+Current target: `production partial` release candidate for `1.0.0-rc.1`.
 
 ## Security Gate
 
@@ -12,6 +12,7 @@ Resolved:
 - Safe mode ships with a narrow allowlist for low-risk development commands.
 - Runtime rejects command cwd values outside the configured repo root.
 - Command outputs use byte caps, line caps, argument caps, timeout handling, artifact truncation markers and secret redaction.
+- Safe mode uses a minimal environment with explicit `safeEnv` and `allowedEnv` opt-ins.
 - CLI and MCP expose safe-mode, unsafe, allowlist and output/artifact/argument limit options.
 - MCP server version comes from `package.json`.
 - Filesystem helpers resolve real paths, reject symlink escapes and skip common secret, binary, dependency, build, cache, lockfile and oversized files.
@@ -31,6 +32,7 @@ Resolved:
 - Anthropic and Gemini counts report `provider-api-count` only when provider APIs succeed.
 - Unsupported models return `unsupported` unless callers request a heuristic fallback.
 - Runtime metrics split retrieval, cache, command compaction, pinned rules, baseline and returned tokens.
+- Retrieval measures the returned bundle payload, not only selected item excerpts.
 
 Residual risk:
 
@@ -45,6 +47,7 @@ Resolved:
 - Retrieval combines BM25, symbols, exact-match boosts, source/test weighting and lockfile/minified penalties.
 - Bundles enforce token budgets and report stale file warnings.
 - Bundles report truncated and skipped chunks.
+- If pinned rules cannot fit compactly, bundles report `overBudget` and warnings instead of claiming they fit.
 
 Residual risk:
 

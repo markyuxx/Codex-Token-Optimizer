@@ -8,6 +8,7 @@ Before opening a PR:
 npm run lint
 npm test
 npm run bench:smoke
+npm pack --dry-run
 ```
 
 Rules for changes:

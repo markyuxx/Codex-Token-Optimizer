@@ -65,6 +65,16 @@ function makeTempRepo() {
     "for (let i = 0; i < 220; i += 1) console.log(`src/server.js:${i} line-${i} SECRET_TOKEN=abc123`);\n",
     "utf8",
   );
+  fs.writeFileSync(
+    path.join(root, "benchmarks", "fixtures", "env-probe.js"),
+    [
+      "console.log(`SAFE=${process.env.TOKEN_OPTIMIZER_SAFE || 'missing'}`);",
+      "console.log(`ALLOWED=${process.env.TOKEN_OPTIMIZER_ALLOWED || 'missing'}`);",
+      "if (process.env.SECRET_TOKEN) console.log(`SECRET_TOKEN=${process.env.SECRET_TOKEN}`);",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
   return root;
 }
 

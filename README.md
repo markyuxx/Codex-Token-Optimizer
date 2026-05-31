@@ -2,7 +2,7 @@
 
 Hybrid context retrieval and token-reduction framework for coding agents.
 
-Status: `0.4.0`, production partial. The project now has safe command execution, exact token counters where providers support them, cached file reads, AST/BM25 retrieval, command-output compaction, MCP tools, CLI commands, and local benchmarks. It is not a global OS hook and it does not claim exact token counts for unsupported models.
+Status: `1.0.0-rc.1`, release candidate for production partial. The project has safe command execution, exact token counters where providers support them, cached file reads, AST/BM25 retrieval, command-output compaction, MCP tools, CLI commands, pack verification and local benchmarks. It is not a global OS hook and it does not claim exact token counts for unsupported models.
 
 ## Install
 
@@ -85,6 +85,8 @@ Blocked in safe mode:
 
 `runCommand` responses include stable fields for agents: `command`, `args`, `cwd`, `safeMode`, `allowed`, `blockedReason`, `timedOut`, `stdoutPreview`, `stderrPreview`, `errors`, `warnings`, `failedTests`, `stackTraces`, `fileReferences`, `artifactPath`, `tokensBefore`, `tokensReturned` and `tokensSaved`.
 
+In safe mode the runner does not pass the full parent `process.env`. It passes a minimal platform environment plus explicit `safeEnv` and `allowedEnv` values.
+
 Unsafe mode exists for trusted local use only:
 
 ```bash
@@ -133,6 +135,7 @@ Useful flags:
 - `--unsafe` permits shell execution for trusted commands.
 - `--allow-command` adds regex allowlist entries for safe mode.
 - `--timeout`, `--max-stdout-bytes`, `--max-stderr-bytes`, `--max-lines`, `--max-artifact-bytes`, `--max-command-length`, `--max-args`, `--max-arg-length`.
+- `--safe-env KEY=value`, `--allowed-env KEY=value` for explicit safe-mode environment opt-ins.
 - `--max-tokens`, `--max-bytes`, `--json`, `--include-content`, `--force`, `--cwd`, `--model`, `--provider`, `--excludes`.
 
 ## MCP
@@ -180,4 +183,4 @@ This project optimizes context only when agents use its CLI, MCP tools or Node A
 
 Embeddings are pluggable, but remote embeddings require provider configuration. Local benchmarks rely on deterministic AST/BM25 retrieval so they can run without network access.
 
-`production partial` means the dangerous defaults are locked down and the local gates pass. It does not mean security review is complete for every environment.
+`1.0.0-rc.1` means the dangerous defaults are locked down and the local gates pass. It does not mean security review is complete for every environment, so the project remains a release candidate rather than final `1.0.0`.

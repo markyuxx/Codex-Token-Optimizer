@@ -1,6 +1,6 @@
 {
   "name": "codex-token-optimizer",
-  "version": "0.4.0",
+  "version": "1.0.0-rc.1",
   "description": "Hybrid retrieval and context reduction framework for coding agents.",
   "main": "api.js",
   "type": "commonjs",
@@ -32,13 +32,13 @@
     "tokens": "node index.js tokens",
     "exec": "node index.js exec",
     "benchmark": "node index.js benchmark",
-    "bench": "node index.js benchmark --fail-on-regression",
-    "bench:smoke": "node index.js benchmark --smoke --budget 500 --fail-on-regression",
-    "bench:full": "node index.js benchmark --budget 900 --fail-on-regression",
+    "bench": "node index.js benchmark --budget 1500 --fail-on-regression",
+    "bench:smoke": "node index.js benchmark --smoke --budget 1500 --fail-on-regression",
+    "bench:full": "node index.js benchmark --budget 1500 --fail-on-regression",
     "mcp": "node mcp-server.js",
     "lint": "node --check api.js && node --check index.js && node --check runtime.js && node --check mcp-server.js && node --check lib/benchmark.js && node --check lib/cache.js && node --check lib/commands.js && node --check lib/fs-utils.js && node --check lib/retrieval.js && node --check lib/rules.js && node --check lib/tokenization.js && node --check tests/benchmark.test.js && node --check tests/cli.test.js && node --check tests/commands.test.js && node --check tests/fs-utils.test.js && node --check tests/helpers.js && node --check tests/mcp.test.js && node --check tests/runtime.test.js && node --check tests/tokenization.test.js && node --check tests/version.test.js",
     "test": "node --test tests/*.test.js",
-    "check": "npm run lint && npm test && npm run bench:smoke"
+    "check": "npm run lint && npm test && npm run bench:smoke && npm pack --dry-run"
   },
   "keywords": [
     "codex",

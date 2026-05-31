@@ -81,6 +81,44 @@ test("safe mode enforces maxArgs and maxArgLength before execution", async () =>
   assert.match(tooLong.blockedReason, /argument exceeds/i);
 });
 
+test("safe mode uses a minimal environment and allowedEnv opt-ins", async () => {
+  const root = makeTempRepo();
+  const runtime = createRuntime({ rootDir: root, stateDirName: ".token-optimizer-test" });
+
+  const command = { cmd: "node", args: ["benchmarks/fixtures/env-probe.js"] };
+  const allowlist = [/^node benchmarks[\/\\]fixtures[\/\\]env-probe\.js$/];
+  const minimal = await runtime.runCommand(command, {
+    cwd: root,
+    allowlist,
+    safeEnv: { TOKEN_OPTIMIZER_SAFE: "yes" },
+  });
+  const allowed = await runtime.runCommand(command, {
+    cwd: root,
+    allowlist,
+    safeEnv: { TOKEN_OPTIMIZER_SAFE: "yes" },
+    allowedEnv: { TOKEN_OPTIMIZER_ALLOWED: "visible", SECRET_TOKEN: "do-not-print" },
+  });
+
+  assert.equal(minimal.status, "ok");
+  assert.match(minimal.stdoutPreview, /SAFE=yes/);
+  assert.match(minimal.stdoutPreview, /ALLOWED=missing/);
+  assert.doesNotMatch(minimal.stdoutPreview, /SECRET/);
+  assert.match(allowed.stdoutPreview, /ALLOWED=visible/);
+  assert.doesNotMatch(allowed.stdoutPreview, /do-not-print/);
+});
+
+test("safe mode validates repo-local path arguments for allowed file commands", async () => {
+  const root = makeTempRepo();
+  const runtime = createRuntime({ rootDir: root, stateDirName: ".token-optimizer-test" });
+
+  const outsideLs = await runtime.runCommand({ cmd: "ls", args: [".."] }, { cwd: root });
+  const insideLs = await runtime.runCommand({ cmd: "ls", args: ["src"] }, { cwd: root });
+
+  assert.equal(outsideLs.status, "blocked");
+  assert.match(outsideLs.blockedReason, /path argument escapes root/i);
+  assert.notEqual(insideLs.status, "blocked");
+});
+
 test("explicit allowlist enables benchmark fixture and compacts large output", async () => {
   const root = makeTempRepo();
   const runtime = createRuntime({ rootDir: root, stateDirName: ".token-optimizer-test" });

@@ -3,7 +3,7 @@ const path = require("node:path");
 const { createCacheStore } = require("./lib/cache");
 const { runCommand: runCommandInternal } = require("./lib/commands");
 const { runBenchmark } = require("./lib/benchmark");
-const { ensureDir, hashText, readJson, readRepoFiles, safeRelPath, writeJson } = require("./lib/fs-utils");
+const { ensureDir, hashText, readJson, readRepoFiles, safeRelPath, shouldSkip, writeJson } = require("./lib/fs-utils");
 const { createIndex, loadIndexFromDisk, queryIndex } = require("./lib/retrieval");
 const { getPinnedRules } = require("./lib/rules");
 const { createTokenCounterRegistry } = require("./lib/tokenization");
@@ -111,6 +111,9 @@ function createRuntime(options = {}) {
       const relPath = safeRelPath(baseDir, targetPath);
       const absPath = path.join(baseDir, relPath);
       const stats = fs.statSync(absPath);
+      if (shouldSkip(relPath, stats, { maxBytes: options.maxBytes || 512 * 1024 })) {
+        throw new Error(`File is excluded by optimizer filesystem policy: ${relPath}`);
+      }
       const maxBytes = options.maxBytes || 512 * 1024;
       if (stats.size > maxBytes) {
         throw new Error(`File exceeds maxBytes limit: ${relPath}`);
@@ -183,7 +186,9 @@ function createRuntime(options = {}) {
     async retrieveContext(query, options = {}) {
       const index = this.ensureIndex();
       const budget = options.budget || 1200;
-      const rules = this.getPinnedRules();
+      let rules = this.getPinnedRules();
+      const warnings = [];
+      let rulesCompacted = false;
       const ruleText = rules.map((rule) => `- ${rule.text}`).join("\n");
       const ruleCostEstimate = await this.estimateTokens({
         model: options.model || "gpt-4o-mini",
@@ -191,6 +196,15 @@ function createRuntime(options = {}) {
         text: ruleText,
       });
       const ruleCost = countFromResult(ruleCostEstimate) || 0;
+      if (ruleCost > Math.max(budget * 0.8, budget - 16)) {
+        rulesCompacted = true;
+        warnings.push("Pinned rules exceed the requested budget; rules were compacted and the bundle may be overBudget.");
+        rules = rules.slice(0, 3).map((rule) => ({
+          ...rule,
+          text: String(rule.text || "").slice(0, Math.max(24, budget * 2)),
+          compacted: true,
+        }));
+      }
       const ranked = await queryIndex(index, query, {
         limit: options.limit || 10,
         embedding: options.embedding,
@@ -210,7 +224,10 @@ function createRuntime(options = {}) {
         .sort((a, b) => b.totalScore - a.totalScore || b.bestChunk.score - a.bestChunk.score)
         .slice(0, options.limit || 10);
 
-      let remaining = Math.max(budget - ruleCost, 0);
+      const activeRuleText = rules.map((rule) => `- ${rule.text}`).join("\n");
+      const activeRuleCostEstimate = await countText(activeRuleText, options);
+      const activeRuleCost = countFromResult(activeRuleCostEstimate) || 0;
+      let remaining = Math.max(budget - activeRuleCost, 0);
       const items = [];
       const seenRefs = [];
       let truncatedChunks = 0;
@@ -258,15 +275,11 @@ function createRuntime(options = {}) {
       const staleWarnings = items
         .filter((item) => staleSet.has(item.path))
         .map((item) => ({ path: item.path, warning: "File changed since the last index build; reindex is recommended." }));
-      const usedTokens = budget - remaining;
+      let usedTokens = budget - remaining;
       if (items.length < rankedFiles.length) skippedChunks += rankedFiles.length - items.length - skippedChunks;
-
-      return {
+      let responseShape = {
         query,
         requestedBudget: budget,
-        usedTokens,
-        remainingTokens: remaining,
-        overBudget: usedTokens > budget,
         items,
         rules,
         seenRefs,
@@ -274,6 +287,51 @@ function createRuntime(options = {}) {
         truncatedChunks,
         skippedChunks: Math.max(skippedChunks, 0),
         truncated: items.length < rankedFiles.length,
+        rulesCompacted,
+        warnings,
+      };
+      let payloadTokenEstimate = await countText(JSON.stringify(responseShape), options);
+      let returnedTokens = countFromResult(payloadTokenEstimate) || usedTokens;
+      while (returnedTokens > budget && items.length) {
+        const lastItem = items[items.length - 1];
+        if (lastItem.excerpt && lastItem.excerpt.length > 120) {
+          lastItem.excerpt = `${lastItem.excerpt.slice(0, Math.max(80, Math.floor(lastItem.excerpt.length * 0.6)))}\n...[truncated to payload budget]`;
+          lastItem.truncated = true;
+          truncatedChunks += 1;
+        } else {
+          items.pop();
+          skippedChunks += 1;
+        }
+        responseShape = {
+          ...responseShape,
+          items,
+          truncatedChunks,
+          skippedChunks: Math.max(skippedChunks, 0),
+          truncated: true,
+        };
+        payloadTokenEstimate = await countText(JSON.stringify(responseShape), options);
+        returnedTokens = countFromResult(payloadTokenEstimate) || usedTokens;
+      }
+      usedTokens = Math.min(returnedTokens, budget);
+      const overBudget = returnedTokens > budget;
+
+      return {
+        query,
+        requestedBudget: budget,
+        usedTokens,
+        returnedTokens,
+        remainingTokens: remaining,
+        overBudget,
+        payloadTokenEstimate,
+        items,
+        rules,
+        seenRefs,
+        staleWarnings,
+        truncatedChunks,
+        skippedChunks: Math.max(skippedChunks, 0),
+        truncated: items.length < rankedFiles.length,
+        rulesCompacted,
+        warnings,
         tokenCost: usedTokens,
         metrics: options.skipMetrics ? null : await this.contextMetrics({
           items,
@@ -347,6 +405,9 @@ function createRuntime(options = {}) {
         maxCommandLength: options.maxCommandLength,
         maxArgs: options.maxArgs,
         maxArgLength: options.maxArgLength,
+        rootDir: baseDir,
+        safeEnv: options.safeEnv,
+        allowedEnv: options.allowedEnv,
       });
       if (result.status === "blocked") {
         return {

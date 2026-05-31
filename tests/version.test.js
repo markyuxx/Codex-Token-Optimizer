@@ -13,4 +13,5 @@ test("release version is consistent across package, docs, changelog, and MCP sou
   assert.match(readme, new RegExp(`Status: \`${packageJson.version}\``));
   assert.match(changelog, new RegExp(`## ${packageJson.version.replace(/\./g, "\\.")}`));
   assert.match(mcp, /version: packageJson\.version/);
+  assert.equal(packageJson.version, "1.0.0-rc.1");
 });

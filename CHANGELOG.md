@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0-rc.1
+
+- Prepared the project as a release candidate instead of a final `1.0.0`.
+- Safe mode now runs with a minimal environment plus explicit `safeEnv` and `allowedEnv` opt-ins.
+- `readFileContext` now applies the same secret/excluded-file policy used by indexing.
+- Retrieval now measures the returned bundle payload and reports `returnedTokens`, `payloadTokenEstimate`, `rulesCompacted`, `warnings`, `truncatedChunks` and `skippedChunks`.
+- Command artifact writes validate containment under the optimizer artifact directory.
+- CI and `npm run check` now include `npm pack --dry-run`.
+
 ## 0.4.0
 
 - Replaced shell-first command execution with safe-mode `spawn` execution.
