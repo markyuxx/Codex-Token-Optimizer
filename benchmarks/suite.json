@@ -13,6 +13,28 @@
       "expectedPaths": [
         "lib/tokenization.js"
       ]
+    },
+    {
+      "name": "find safe command runner",
+      "query": "safeMode spawn allowlist dangerous shell syntax runCommand",
+      "expectedPaths": [
+        "lib/commands.js"
+      ]
+    },
+    {
+      "name": "find cache repeated reads",
+      "query": "rememberFileRead metadata only unchanged cache tokensSaved",
+      "expectedPaths": [
+        "lib/cache.js",
+        "runtime.js"
+      ]
+    },
+    {
+      "name": "avoid lockfile confusion",
+      "query": "package lock should not dominate retrieval command symbols",
+      "expectedPaths": [
+        "lib/retrieval.js"
+      ]
     }
   ]
 }

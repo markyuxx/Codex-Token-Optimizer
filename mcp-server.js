@@ -4,10 +4,10 @@ const runtime = createRuntime({ rootDir: process.cwd() });
 let buffer = "";
 
 const tools = [
-  { name: "estimate_tokens", description: "Estimate tokens for text/messages with exact providers when available.", inputSchema: { type: "object", properties: { provider: { type: "string" }, model: { type: "string" }, text: { type: "string" } }, required: ["model", "text"] } },
-  { name: "retrieve_context", description: "Retrieve a token-budgeted context bundle.", inputSchema: { type: "object", properties: { query: { type: "string" }, budget: { type: "number" }, model: { type: "string" }, provider: { type: "string" } }, required: ["query"] } },
-  { name: "read_file_context", description: "Read a file via the optimizer cache.", inputSchema: { type: "object", properties: { path: { type: "string" }, model: { type: "string" }, provider: { type: "string" }, purpose: { type: "string" } }, required: ["path"] } },
-  { name: "run_command", description: "Execute a command through the optimizer shell proxy.", inputSchema: { type: "object", properties: { command: { type: "string" }, cwd: { type: "string" }, model: { type: "string" }, provider: { type: "string" } }, required: ["command"] } },
+  { name: "estimate_tokens", description: "Estimate tokens for text/messages with exact providers when available.", inputSchema: { type: "object", properties: { provider: { type: "string" }, model: { type: "string" }, text: { type: "string" }, messages: { type: "array" }, allowEstimateFallback: { type: "boolean" } }, required: ["model"] } },
+  { name: "retrieve_context", description: "Retrieve a token-budgeted context bundle.", inputSchema: { type: "object", properties: { query: { type: "string" }, budget: { type: "number" }, model: { type: "string" }, provider: { type: "string" }, limit: { type: "number" } }, required: ["query"] } },
+  { name: "read_file_context", description: "Read a file via the optimizer cache.", inputSchema: { type: "object", properties: { path: { type: "string" }, model: { type: "string" }, provider: { type: "string" }, purpose: { type: "string" }, includeContent: { type: "boolean" }, force: { type: "boolean" }, maxBytes: { type: "number" }, maxTokens: { type: "number" } }, required: ["path"] } },
+  { name: "run_command", description: "Execute a command through the optimizer shell proxy with safeMode enabled by default.", inputSchema: { type: "object", properties: { command: { type: "string" }, cmd: { type: "string" }, args: { type: "array", items: { type: "string" } }, cwd: { type: "string" }, model: { type: "string" }, provider: { type: "string" }, safeMode: { type: "boolean" }, unsafe: { type: "boolean" }, allowCommand: { type: "array", items: { type: "string" } }, timeoutMs: { type: "number" }, maxBytes: { type: "number" }, maxLines: { type: "number" } } } },
   { name: "get_rules", description: "Return the pinned rules kept visible in bundles.", inputSchema: { type: "object", properties: {} } },
   { name: "benchmark_run", description: "Run the optimizer benchmark suite.", inputSchema: { type: "object", properties: { budget: { type: "number" }, model: { type: "string" } } } },
   { name: "staleness", description: "Return stale files since the last build.", inputSchema: { type: "object", properties: {} } },
@@ -35,7 +35,11 @@ async function callTool(params) {
   if (params.name === "estimate_tokens") return content(await runtime.estimateTokens(args));
   if (params.name === "retrieve_context") return content(await runtime.retrieveContext(args.query, args));
   if (params.name === "read_file_context") return content(await runtime.readFileContext(args.path, args));
-  if (params.name === "run_command") return content(await runtime.runCommand(args.command, args));
+  if (params.name === "run_command") {
+    const command = args.command || { cmd: args.cmd, args: args.args || [] };
+    const allowlist = Array.isArray(args.allowCommand) ? args.allowCommand.map((entry) => new RegExp(entry)) : undefined;
+    return content(await runtime.runCommand(command, { ...args, allowlist }));
+  }
   if (params.name === "get_rules") return content(runtime.getPinnedRules());
   if (params.name === "benchmark_run") return content(await runtime.benchmark(args));
   if (params.name === "staleness") return content(runtime.staleness());
@@ -46,7 +50,7 @@ async function callTool(params) {
 async function handle(request) {
   try {
     if (request.method === "initialize") {
-      send({ jsonrpc: "2.0", id: request.id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "token-optimizer", version: "1.0.0" } } });
+      send({ jsonrpc: "2.0", id: request.id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "token-optimizer", version: "0.4.0" } } });
       return;
     }
     if (request.method === "tools/list") {

@@ -23,6 +23,30 @@ function createRuntime(options = {}) {
   const cache = createCacheStore(stateDir);
   const tokenCounters = createTokenCounterRegistry();
 
+  function resolveCwdInsideRoot(cwd) {
+    const root = fs.realpathSync.native(baseDir);
+    const requested = path.resolve(cwd || baseDir);
+    const realRequested = fs.realpathSync.native(requested);
+    const relative = path.relative(root, realRequested);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error(`cwd escapes root: ${cwd}`);
+    }
+    return realRequested;
+  }
+
+  function countFromResult(result) {
+    return result.status === "supported" || result.status === "estimated" ? result.tokenCount : null;
+  }
+
+  async function countText(text, optionsForCount = {}) {
+    return runtime.estimateTokens({
+      model: optionsForCount.model || "gpt-4o-mini",
+      provider: optionsForCount.provider || "openai",
+      text,
+      allowEstimateFallback: optionsForCount.allowEstimateFallback,
+    });
+  }
+
   const runtime = {
     baseDir,
     stateDir,
@@ -92,37 +116,63 @@ function createRuntime(options = {}) {
         throw new Error(`File exceeds maxBytes limit: ${relPath}`);
       }
       const content = fs.readFileSync(absPath, "utf8");
+      if (content.includes("\u0000")) {
+        throw new Error(`File appears to be binary: ${relPath}`);
+      }
       const hash = hashText(content);
       const byteLength = Buffer.byteLength(content, "utf8");
       const cacheState = cache.rememberFileRead(relPath, hash, {
         purpose: options.purpose || "",
         size: byteLength,
       });
-      const tokenEstimate = await this.estimateTokens({
-        model: options.model || "gpt-4o-mini",
-        provider: options.provider || "openai",
-        text: content,
-      });
-      const tokenCost = tokenEstimate.status === "supported" ? tokenEstimate.tokenCount : null;
+      const tokenEstimate = await countText(content, options);
+      const tokensIfFullContent = countFromResult(tokenEstimate);
       const metadata = {
         path: relPath,
         hash,
-        size: byteLength,
-        tokenCost,
+        sizeBytes: byteLength,
+        tokenEstimate,
         firstSeenAt: cacheState.firstSeenAt,
         lastSeenAt: cacheState.lastSeenAt,
         previousSeenAt: cacheState.previousSeenAt,
       };
       const includeContent = options.includeContent === true || options.force === true || cacheState.status !== "unchanged";
-      const metadataTokenEstimate = await this.estimateTokens({
-        model: options.model || "gpt-4o-mini",
-        provider: options.provider || "openai",
-        text: JSON.stringify(metadata),
-      });
+      const returnedPayload = includeContent ? content : JSON.stringify(metadata);
+      const returnedTokenEstimate = await countText(returnedPayload, options);
+      const tokensReturned = countFromResult(returnedTokenEstimate);
+      const tokensSaved = tokensIfFullContent !== null && tokensReturned !== null ? Math.max(tokensIfFullContent - tokensReturned, 0) : 0;
+      const response = {
+        path: relPath,
+        hash,
+        sizeBytes: byteLength,
+        cacheStatus: cacheState.status,
+        cacheHit: cacheState.status === "unchanged",
+        changed: cacheState.status !== "unchanged",
+        contentIncluded: includeContent,
+        tokenEstimate,
+        tokensIfFullContent,
+        tokensReturned,
+        tokensSaved,
+        ref: cacheState.ref,
+        firstSeenAt: cacheState.firstSeenAt,
+        lastSeenAt: cacheState.lastSeenAt,
+        previousSeenAt: cacheState.previousSeenAt,
+        metrics: {
+          cacheTokensSaved: tokensSaved,
+          returnedTokens: tokensReturned,
+          baselineTokens: tokensIfFullContent,
+        },
+        ...(includeContent ? { content } : {}),
+      };
       return {
+        ...response,
         file: {
-          ...metadata,
-          metadataTokenCost: metadataTokenEstimate.status === "supported" ? metadataTokenEstimate.tokenCount : null,
+          path: response.path,
+          hash: response.hash,
+          size: response.sizeBytes,
+          sizeBytes: response.sizeBytes,
+          tokenCost: response.tokensIfFullContent,
+          metadataTokenCost: response.tokensReturned,
           omitted: !includeContent,
           ...(includeContent ? { content } : {}),
         },
@@ -140,7 +190,7 @@ function createRuntime(options = {}) {
         provider: options.provider || "openai",
         text: ruleText,
       });
-      const ruleCost = ruleCostEstimate.status === "supported" ? ruleCostEstimate.tokenCount : 0;
+      const ruleCost = countFromResult(ruleCostEstimate) || 0;
       const ranked = await queryIndex(index, query, {
         limit: options.limit || 10,
         embedding: options.embedding,
@@ -166,14 +216,24 @@ function createRuntime(options = {}) {
 
       for (const entry of rankedFiles) {
         const chunk = entry.bestChunk;
-        const excerpt = chunk.text.trim();
-        const estimate = await this.estimateTokens({
-          model: options.model || "gpt-4o-mini",
-          provider: options.provider || "openai",
-          text: excerpt,
-        });
-        const chunkCost = estimate.status === "supported" ? estimate.tokenCount : Math.ceil(excerpt.length / 4);
-        if (chunkCost > remaining && items.length) break;
+        let excerpt = chunk.text.trim();
+        let estimate = await countText(excerpt, options);
+        let chunkCost = countFromResult(estimate) || Math.ceil(excerpt.length / 4);
+        let overBudget = false;
+        if (chunkCost > remaining) {
+          if (remaining <= 0) break;
+          const originalExcerpt = excerpt;
+          let charLimit = Math.max(40, Math.min(originalExcerpt.length, remaining * 3));
+          while (charLimit > 0) {
+            excerpt = `${originalExcerpt.slice(0, charLimit)}\n...[truncated to budget]`;
+            estimate = await countText(excerpt, options);
+            chunkCost = countFromResult(estimate) || Math.ceil(excerpt.length / 4);
+            if (chunkCost <= remaining) break;
+            charLimit = Math.floor(charLimit * 0.65);
+          }
+          overBudget = chunkCost > remaining;
+        }
+        if (overBudget) break;
         remaining -= chunkCost;
         const ref = `chunk:${chunk.id}`;
         seenRefs.push(ref);
@@ -185,18 +245,28 @@ function createRuntime(options = {}) {
           endLine: chunk.endLine,
           excerpt,
           tokenCost: chunkCost,
+          truncated: excerpt.includes("[truncated to budget]"),
         });
       }
+      const staleSet = new Set(this.staleness().stale);
+      const staleWarnings = items
+        .filter((item) => staleSet.has(item.path))
+        .map((item) => ({ path: item.path, warning: "File changed since the last index build; reindex is recommended." }));
+      const usedTokens = budget - remaining;
 
       return {
         query,
+        requestedBudget: budget,
+        usedTokens,
+        remainingTokens: remaining,
+        overBudget: usedTokens > budget,
         items,
         rules,
         seenRefs,
-        staleWarnings: [],
+        staleWarnings,
         truncated: items.length < rankedFiles.length,
-        tokenCost: budget - remaining,
-        metrics: await this.contextMetrics({
+        tokenCost: usedTokens,
+        metrics: options.skipMetrics ? null : await this.contextMetrics({
           items,
           rules,
           model: options.model || "gpt-4o-mini",
@@ -206,16 +276,51 @@ function createRuntime(options = {}) {
     },
 
     async runCommand(command, options = {}) {
+      let cwd;
+      try {
+        cwd = resolveCwdInsideRoot(options.cwd || baseDir);
+      } catch (error) {
+        return {
+          status: "blocked",
+          reason: error.message,
+          exitCode: null,
+          durationMs: 0,
+          classification: null,
+          tokenCost: 0,
+          tokensBefore: 0,
+          summary: "",
+          errors: [],
+          warnings: [],
+          failedTests: [],
+          stackTraces: [],
+          filesMentioned: [],
+          truncated: false,
+          artifactRef: null,
+          artifactTruncated: false,
+          safeMode: options.safeMode !== false && options.unsafe !== true,
+          metrics: {
+            baselineTokens: 0,
+            returnedTokens: 0,
+            commandCompactionTokensSaved: 0,
+            totalSaved: 0,
+          },
+          nextActions: ["Use a cwd inside the optimizer root."],
+        };
+      }
       const result = await runCommandInternal(command, {
-        cwd: options.cwd || baseDir,
+        cwd,
         classify: options.classify,
         allowlist: options.allowlist,
         dangerousPatterns: options.dangerousPatterns,
         safeMode: options.safeMode,
+        unsafe: options.unsafe,
         timeoutMs: options.timeoutMs,
         maxBuffer: options.maxBuffer,
         maxLines: options.maxLines,
         maxBytes: options.maxBytes,
+        maxStdoutBytes: options.maxStdoutBytes,
+        maxStderrBytes: options.maxStderrBytes,
+        maxArtifactBytes: options.maxArtifactBytes,
       });
       if (result.status === "blocked") {
         return {
@@ -226,41 +331,59 @@ function createRuntime(options = {}) {
           summary: "",
           errors: [],
           warnings: [],
+          failedTests: [],
+          stackTraces: [],
           filesMentioned: [],
           truncated: false,
           artifactRef: null,
+          artifactTruncated: false,
+          durationMs: result.durationMs || 0,
           status: "blocked",
           reason: result.reason,
-          nextActions: ["Review the command allowlist or rerun with safeMode disabled only if you trust the command."],
+          safeMode: true,
+          metrics: {
+            baselineTokens: 0,
+            returnedTokens: 0,
+            commandCompactionTokensSaved: 0,
+            totalSaved: 0,
+          },
+          nextActions: ["Review the command allowlist or rerun with unsafe:true only if you trust the command."],
         };
       }
-      const tokenEstimate = await this.estimateTokens({
-        model: options.model || "gpt-4o-mini",
-        provider: options.provider || "openai",
-        text: result.summary,
-      });
-      const fullTokenEstimate = await this.estimateTokens({
-        model: options.model || "gpt-4o-mini",
-        provider: options.provider || "openai",
-        text: result.combined,
-      });
+      const tokenEstimate = await countText(result.summary, options);
+      const fullTokenEstimate = await countText(result.combined || result.artifact || "", options);
+      const returnedTokens = countFromResult(tokenEstimate);
+      const baselineTokens = countFromResult(fullTokenEstimate);
+      const commandCompactionTokensSaved = baselineTokens !== null && returnedTokens !== null ? Math.max(baselineTokens - returnedTokens, 0) : 0;
       let artifactRef = null;
       if (result.truncated || options.persistArtifact !== false) {
-        const artifact = cache.rememberCommand(command, result.combined);
+        const artifact = cache.rememberCommand(result.command || JSON.stringify(command), result.artifact || result.combined || "");
         artifactRef = artifact.ref;
       }
       return {
         exitCode: result.exitCode,
+        durationMs: result.durationMs,
         classification: result.classification,
-        tokenCost: tokenEstimate.status === "supported" ? tokenEstimate.tokenCount : null,
-        tokensBefore: fullTokenEstimate.status === "supported" ? fullTokenEstimate.tokenCount : null,
+        tokenCost: returnedTokens,
+        tokensBefore: baselineTokens,
         summary: result.summary,
         errors: result.errors,
         warnings: result.warnings,
+        failedTests: result.failedTests,
+        stackTraces: result.stackTraces,
         filesMentioned: result.filesMentioned,
         truncated: result.truncated,
         artifactRef,
+        artifactTruncated: result.artifactTruncated,
         status: result.status,
+        safeMode: result.safeMode,
+        metrics: {
+          baselineTokens,
+          returnedTokens,
+          commandCompactionTokensSaved,
+          totalSaved: commandCompactionTokensSaved,
+          savingsPercent: baselineTokens ? Number(((commandCompactionTokensSaved / baselineTokens) * 100).toFixed(2)) : 0,
+        },
         nextActions: result.errors.length ? ["Inspect the stored artifact or rerun the command with narrower scope."] : [],
       };
     },
@@ -284,8 +407,10 @@ function createRuntime(options = {}) {
           retrieval: Math.max(baselineTokens - optimizedTokens, 0),
           cache: 0,
           commandCompaction: 0,
-          pinnedRules: optimizedTokens,
+          pinnedRules: rules.length ? optimizedTokens : 0,
           embeddings: 0,
+          returned: optimizedTokens,
+          baseline: baselineTokens,
         },
       };
     },

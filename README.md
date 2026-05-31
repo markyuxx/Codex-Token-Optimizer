@@ -1,182 +1,143 @@
 # Codex Token Optimizer
 
-Codex Token Optimizer is local tooling for reducing agent context cost in coding workflows. It is honest about what is exact, what is estimated, and what only works when your workflow actually routes reads, retrieval, and command output through the tool.
+Hybrid context retrieval and token-reduction framework for coding agents.
 
-It is not magic, and it is not a sandbox. It is a measurable context optimizer for trusted development repositories.
+Status: `0.4.0`, production partial. The project now has safe command execution, exact token counters where providers support them, cached file reads, AST/BM25 retrieval, command-output compaction, MCP tools, CLI commands, and local benchmarks. It is not a global OS hook and it does not claim exact token counts for unsupported models.
 
-## What It Does
-
-- Counts tokens for plain text with provider-aware tokenizers when available.
-- Marks OpenAI chat-message counts as estimated message-structure counts, not provider-exact counts.
-- Indexes JS/TS repositories with AST symbols, imports, exports, calls, text chunks, and symbol chunks.
-- Retrieves compact context bundles with token budgets and pinned rules.
-- Caches file reads and omits unchanged file content by default.
-- Runs commands through a summarizing proxy with output truncation, artifacts, timeout support, dangerous-command blocking, and allowlists.
-- Reports benchmark metrics using real token counting: baseline tokens, optimized tokens, savings ratio, precision, recall, query time, index time, and index size.
-- Exposes CLI, Node API, and MCP tools.
-
-## What It Does Not Do
-
-- It does not guarantee token savings if agents bypass the CLI/API/MCP and read files directly.
-- It does not make arbitrary shell commands safe.
-- It does not provide OS-level sandboxing or container isolation.
-- It does not prove end-to-end agent success without an external evaluator.
-- It does not make embeddings mandatory; lexical retrieval works without embeddings, while embeddings remain pluggable.
-- It does not call estimated chat-message token counts exact.
-
-## Installation
-
-Install from GitHub:
-
-```bash
-npm install github:markyuxx/Codex-Token-Optimizer
-```
-
-Clone and run locally:
+## Install
 
 ```bash
 git clone https://github.com/markyuxx/Codex-Token-Optimizer.git
 cd Codex-Token-Optimizer
 npm install
-npm test
-npm run bench
+npm run check
 ```
 
-Use without installing globally:
+Use the CLI directly:
 
 ```bash
-npx github:markyuxx/Codex-Token-Optimizer build
+npx token-optimizer build
+npx token-optimizer query "safe command runner"
+npx token-optimizer read runtime.js
+npx token-optimizer exec node --version
+npx token-optimizer benchmark
 ```
 
-Requirements:
-
-- Node.js 18 or newer
-- npm 9 or newer recommended
-
-Optional credentials:
-
-- `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY` or `GOOGLE_API_KEY`
-- `OLLAMA_BASE_URL`
-- `OLLAMA_EMBED_MODEL`
-
-## Quick Start
-
-Build the local index:
+Or from this checkout:
 
 ```bash
 npm run build
+npm run query -- "retrieveContext budget"
+npm run read -- runtime.js --include-content
+npm run exec -- node --version
+npm run bench:smoke
 ```
 
-Query relevant implementation context:
+## What It Does
 
-```bash
-npm run query -- "createTokenCounterRegistry js-tiktoken countMessages inferProvider"
+The optimizer builds a `.token-optimizer/` state directory with an index, cache, staleness snapshot, command artifacts, rules and benchmark output. The runtime exposes three core operations:
+
+```js
+const { createRuntime } = require("codex-token-optimizer");
+const runtime = createRuntime({ rootDir: process.cwd() });
+
+await runtime.buildIndex();
+await runtime.retrieveContext("runCommand safeMode allowlist", { budget: 800 });
+await runtime.readFileContext("runtime.js");
+await runtime.runCommand({ cmd: "node", args: ["--version"] });
 ```
 
-Read a file through the cache:
+Retrieval uses JavaScript/TypeScript AST parsing, symbols, imports, calls, BM25 chunk ranking, exact-match boosts, source/test weighting and lockfile/minified penalties. Embeddings remain pluggable through provider adapters, but local tests do not require network calls.
 
-```bash
-npm run read -- runtime.js
+Pinned rules come from `AGENTS.md` and stay visible in context bundles. The optimizer does not replace critical instructions with a hidden original.
+
+## Safe Command Execution
+
+`runCommand` defaults to `safeMode: true`. Safe mode uses `spawn` without a shell and prefers structured input:
+
+```js
+await runtime.runCommand({ cmd: "npm", args: ["test"] });
 ```
 
-Force unchanged content to be returned:
+Allowed by default:
 
-```bash
-npm run read -- runtime.js --includeContent true
-```
-
-Count tokens:
-
-```bash
-npm run tokens -- --model gpt-4o-mini --text "hello world"
-```
-
-Run a command through the proxy:
-
-```bash
-npm run exec -- "cmd /c echo optimizer-ok"
-```
-
-Run the benchmark:
-
-```bash
-npm run bench
-```
-
-## CLI Commands
-
-- `npm run build`
-- `npm run query -- "<query>"`
-- `npm run read -- <path>`
-- `npm run tokens -- --model <model> --text "<text>"`
-- `npm run exec -- "<command>"`
-- `npm run benchmark`
-- `npm run bench`
-- `npm run mcp`
-- `npm run lint`
 - `npm test`
+- `npm run test`
+- `npm run lint`
+- `npm run build`
+- `npm run bench:smoke`
+- `node --version`
+- `npm --version`
+- `git status`
+- `git diff`
+- `git log`
 
-If linked or installed globally:
+Blocked in safe mode:
+
+- Shell syntax such as pipes, redirects, `&&`, `||`, `;`, backticks, `$()`, subshells.
+- Shell wrappers such as `bash -c`, `sh -c`, `cmd /c`, `powershell -Command`, `pwsh -Command`.
+- Inline interpreters such as `node -e`, `python -c`, `ruby -e`.
+- Dangerous operations such as `rm`, `del`, `rmdir`, `git reset --hard`, `git clean`, `git push --force`, `sudo`, `curl | sh`, `wget | sh`.
+- Obvious secret-file reads such as `.env`, SSH keys, `.pem`, `.key`, `.p12`, `.pfx`.
+
+Unsafe mode exists for trusted local use only:
+
+```bash
+npx token-optimizer exec "node scripts/local-only.js" --unsafe
+```
+
+Treat `--unsafe` as running a normal shell command. Review it first.
+
+## Token Metrics
+
+Token counters report their accuracy:
+
+- OpenAI text: `exact: true`, `accuracy: "exact-text"`, counted locally with `js-tiktoken`.
+- OpenAI messages: `exact: false`, `accuracy: "estimated-chat-structure"`, because chat wrappers can change by model revision.
+- Anthropic and Gemini: `accuracy: "provider-api-count"` only when their official count APIs succeed.
+- Unknown models: `unsupported` unless you pass `allowEstimateFallback: true`, which returns an explicit heuristic estimate.
+
+Responses split savings by source where applicable:
+
+- `retrieval`
+- `cache`
+- `commandCompaction`
+- `pinnedRules`
+- `embeddings`
+- `baseline`
+- `returned`
+
+## CLI
 
 ```bash
 token-optimizer build
-token-optimizer query "token optimizer runtime cache retrieval"
-token-optimizer read runtime.js
-token-optimizer tokens --model gpt-4o-mini --text "hello world"
-token-optimizer exec "cmd /c echo ok"
-token-optimizer benchmark
+token-optimizer query "query text" --budget 1200 --model gpt-4o-mini
+token-optimizer bundle "query text" --max-tokens 900
+token-optimizer read src/file.js --include-content --max-bytes 200000
+token-optimizer exec node --version --safe-mode --timeout 30000
+token-optimizer exec "custom command" --unsafe
+token-optimizer tokens --text "hello world" --model gpt-4o-mini
+token-optimizer benchmark --budget 600
+token-optimizer rules
+token-optimizer status
 ```
 
-## Token Counting
+Useful flags:
 
-OpenAI-compatible plain text counting uses `js-tiktoken` and returns `accuracy: "exact-text"`.
+- `--safe-mode` keeps the default safe runner behavior.
+- `--unsafe` permits shell execution for trusted commands.
+- `--allow-command` adds regex allowlist entries for safe mode.
+- `--max-tokens`, `--max-bytes`, `--timeout`, `--json`, `--include-content`, `--force`, `--excludes`.
 
-OpenAI chat-message counting returns `accuracy: "estimated-chat-structure"` because local code can count content tokens and add known message overhead, but the provider is the final source of truth.
+## MCP
 
-Anthropic and Gemini use provider token-count endpoints when credentials and network access are available. If a provider/model is unsupported, the result is explicit:
+Start the MCP server:
 
-```json
-{
-  "status": "unsupported",
-  "accuracy": "unsupported"
-}
+```bash
+npm run mcp
 ```
 
-## Cache Behavior
-
-Repeated unchanged reads do not return full content by default. They return metadata:
-
-- path,
-- hash,
-- size,
-- token estimate,
-- first seen timestamp,
-- last seen timestamp,
-- cache reference.
-
-Use `includeContent: true` or `force: true` from the API when the caller really needs the full unchanged content.
-
-This is where real cache token savings come from. Returning full content and hoping an agent ignores it is not an optimizer.
-
-## Command Safety
-
-The command proxy includes:
-
-- timeout support,
-- max output buffer support,
-- output truncation,
-- full artifact persistence,
-- dangerous command blocking by default,
-- allowlist support,
-- warning/error/path extraction.
-
-It still uses a shell. Do not pass untrusted commands. For stricter workflows, run commands inside a container and configure an allowlist.
-
-## MCP Tools
-
-The MCP server exposes:
+Tools:
 
 - `estimate_tokens`
 - `retrieve_context`
@@ -187,72 +148,29 @@ The MCP server exposes:
 - `staleness`
 - `index_status`
 
-Start it with:
+`run_command` uses safe mode by default in MCP too. Pass `{ "cmd": "node", "args": ["--version"] }` when possible.
 
-```bash
-npm run mcp
-```
-
-## API Usage
-
-```js
-const { createRuntime } = require("codex-token-optimizer");
-
-async function main() {
-  const runtime = createRuntime({ rootDir: process.cwd() });
-
-  await runtime.buildIndex();
-
-  const bundle = await runtime.retrieveContext("token optimizer runtime", {
-    budget: 900,
-    model: "gpt-4o-mini",
-  });
-
-  console.log(bundle.metrics);
-}
-
-main().catch(console.error);
-```
-
-## Benchmark
+## Benchmarks
 
 Run:
 
 ```bash
+npm run bench:smoke
 npm run bench
 ```
 
-The benchmark reports:
+The benchmark writes:
 
-- `tokensBaseline`
-- `tokensOptimized`
-- `tokensSaved`
-- `savingsRatio`
-- `averageRecallAtK`
-- `averagePrecisionAtK`
-- `embeddingCost`
-- `indexTimeMs`
-- `totalTimeMs`
-- `indexBytes`
+- `reports/benchmark-latest.json`
+- `reports/benchmark-latest.md`
+- `.token-optimizer/benchmark-last.json`
 
-The benchmark is reproducible, but it is not a claim that every workflow saves tokens. It proves savings for the included tasks and shows where the savings come from.
+It checks retrieval hits, budget compliance, cache savings and command compaction savings. If thresholds fail under `--fail-on-regression`, the process exits non-zero.
 
-## Project Structure
+## Limitations
 
-- `runtime.js`: top-level facade
-- `api.js`: import surface
-- `index.js`: CLI entry
-- `mcp-server.js`: MCP surface
-- `lib/tokenization.js`: token counter providers
-- `lib/retrieval.js`: scanner, parser, chunker, BM25, embeddings
-- `lib/cache.js`: file and command cache
-- `lib/commands.js`: command proxy and structured summaries
-- `lib/benchmark.js`: benchmark runner
-- `tests/token-optimizer.test.js`: unit and integration coverage
-- `AUDIT.md`: technical audit and remaining risks
+This project optimizes context only when agents use its CLI, MCP tools or Node API. It does not intercept arbitrary editor reads, OS file access, terminal output outside the proxy, or model provider internals.
 
-## Current Status
+Embeddings are pluggable, but remote embeddings require provider configuration. Local benchmarks rely on deterministic AST/BM25 retrieval so they can run without network access.
 
-Recommendation: beta.
-
-It is a real optimizer now in the sense that it has measurable token-saving mechanisms and tests that prove them. It is not production-grade for hostile inputs or unsupervised command execution.
+`production partial` means the dangerous defaults are locked down and the local gates pass. It does not mean security review is complete for every environment.

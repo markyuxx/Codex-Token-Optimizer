@@ -23,6 +23,42 @@ function parseArgs(argv) {
   return { positional, flags };
 }
 
+function truthy(value) {
+  return value === true || value === "true" || value === "1" || value === "yes";
+}
+
+function parseList(value) {
+  if (!value) return [];
+  return String(value).split(",").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function parseAllowlist(flags) {
+  const entries = parseList(flags["allow-command"]);
+  return entries.length ? entries.map((entry) => new RegExp(entry)) : undefined;
+}
+
+function parseExecArgs(argv) {
+  const flags = {};
+  const commandParts = [];
+  const valueFlags = new Set(["cwd", "model", "provider", "allow-command", "max-tokens", "max-bytes", "max-lines", "timeout"]);
+  const boolFlags = new Set(["safe-mode", "unsafe", "json"]);
+  for (let index = 1; index < argv.length; index += 1) {
+    const value = argv[index];
+    if (valueFlags.has(value.replace(/^--/, ""))) {
+      const key = value.slice(2);
+      flags[key] = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (boolFlags.has(value.replace(/^--/, ""))) {
+      flags[value.slice(2)] = true;
+      continue;
+    }
+    commandParts.push(value);
+  }
+  return { commandParts, flags };
+}
+
 async function main(argv = process.argv.slice(2)) {
   const { positional, flags } = parseArgs(argv);
   const command = positional[0] || "build";
@@ -38,9 +74,11 @@ async function main(argv = process.argv.slice(2)) {
     const query = positional.slice(1).join(" ") || String(flags.query || "");
     const result = await runtime.retrieveContext(query, {
       budget: Number(flags.budget || 1200),
+      maxTokens: Number(flags["max-tokens"] || flags.budget || 1200),
       model: flags.model || "gpt-4o-mini",
       provider: flags.provider || "openai",
       embedding: flags["embedding-provider"] ? { provider: flags["embedding-provider"], model: flags["embedding-model"] } : null,
+      excludes: parseList(flags.excludes),
     });
     console.log(JSON.stringify(result, null, 2));
     return;
@@ -52,20 +90,30 @@ async function main(argv = process.argv.slice(2)) {
       model: flags.model || "gpt-4o-mini",
       provider: flags.provider || "openai",
       purpose: flags.purpose || "",
-      includeContent: flags.includeContent === true || flags.includeContent === "true" || flags["include-content"] === true || flags["include-content"] === "true",
-      force: flags.force === true || flags.force === "true",
+      includeContent: truthy(flags.includeContent) || truthy(flags["include-content"]),
+      force: truthy(flags.force),
+      maxBytes: flags["max-bytes"] ? Number(flags["max-bytes"]) : undefined,
+      maxTokens: flags["max-tokens"] ? Number(flags["max-tokens"]) : undefined,
     });
     console.log(JSON.stringify(result, null, 2));
     return;
   }
 
   if (command === "exec") {
-    const execCommand = positional.slice(1).join(" ");
+    const parsedExec = parseExecArgs(argv);
+    const execFlags = { ...flags, ...parsedExec.flags };
+    const execCommand = parsedExec.commandParts.join(" ");
     const result = await runtime.runCommand(execCommand, {
-      cwd: flags.cwd || process.cwd(),
-      model: flags.model || "gpt-4o-mini",
-      provider: flags.provider || "openai",
-      classify: flags.classify !== "false",
+      cwd: execFlags.cwd || process.cwd(),
+      model: execFlags.model || "gpt-4o-mini",
+      provider: execFlags.provider || "openai",
+      classify: execFlags.classify !== "false",
+      safeMode: !truthy(execFlags.unsafe),
+      unsafe: truthy(execFlags.unsafe),
+      allowlist: parseAllowlist(execFlags),
+      timeoutMs: execFlags.timeout ? Number(execFlags.timeout) : undefined,
+      maxBytes: execFlags["max-bytes"] ? Number(execFlags["max-bytes"]) : undefined,
+      maxLines: execFlags["max-lines"] ? Number(execFlags["max-lines"]) : undefined,
     });
     console.log(JSON.stringify(result, null, 2));
     return;
@@ -88,6 +136,8 @@ async function main(argv = process.argv.slice(2)) {
       budget: Number(flags.budget || 600),
       model: flags.model || "gpt-4o-mini",
       suitePath: flags.suite,
+      smoke: truthy(flags.smoke),
+      failOnRegression: truthy(flags["fail-on-regression"]),
     });
     console.log(JSON.stringify(result, null, 2));
     return;

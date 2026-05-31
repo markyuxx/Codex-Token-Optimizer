@@ -1,0 +1,5 @@
+{
+  "status": "not-captured",
+  "reason": "The pre-hardening benchmark was not available in this working tree when the 0.4.0 hardening pass started. Use benchmark-latest.json for the verified 0.4.0 gate output.",
+  "replacement": "reports/benchmark-latest.json"
+}
