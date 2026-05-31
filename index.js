@@ -52,6 +52,8 @@ async function main(argv = process.argv.slice(2)) {
       model: flags.model || "gpt-4o-mini",
       provider: flags.provider || "openai",
       purpose: flags.purpose || "",
+      includeContent: flags.includeContent === true || flags.includeContent === "true" || flags["include-content"] === true || flags["include-content"] === "true",
+      force: flags.force === true || flags.force === "true",
     });
     console.log(JSON.stringify(result, null, 2));
     return;

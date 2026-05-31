@@ -1,6 +1,6 @@
 {
   "name": "codex-token-optimizer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Hybrid retrieval and context reduction framework for coding agents.",
   "main": "api.js",
   "type": "commonjs",
@@ -28,7 +28,9 @@
     "tokens": "node index.js tokens",
     "exec": "node index.js exec",
     "benchmark": "node index.js benchmark",
+    "bench": "node index.js benchmark",
     "mcp": "node mcp-server.js",
+    "lint": "node --check api.js && node --check index.js && node --check runtime.js && node --check mcp-server.js && node --check lib/benchmark.js && node --check lib/cache.js && node --check lib/commands.js && node --check lib/fs-utils.js && node --check lib/retrieval.js && node --check lib/rules.js && node --check lib/tokenization.js && node --check tests/token-optimizer.test.js",
     "test": "node --test tests/token-optimizer.test.js"
   },
   "keywords": [

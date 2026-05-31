@@ -86,22 +86,45 @@ function createRuntime(options = {}) {
     async readFileContext(targetPath, options = {}) {
       const relPath = safeRelPath(baseDir, targetPath);
       const absPath = path.join(baseDir, relPath);
+      const stats = fs.statSync(absPath);
+      const maxBytes = options.maxBytes || 512 * 1024;
+      if (stats.size > maxBytes) {
+        throw new Error(`File exceeds maxBytes limit: ${relPath}`);
+      }
       const content = fs.readFileSync(absPath, "utf8");
       const hash = hashText(content);
+      const byteLength = Buffer.byteLength(content, "utf8");
       const cacheState = cache.rememberFileRead(relPath, hash, {
         purpose: options.purpose || "",
-        size: Buffer.byteLength(content, "utf8"),
+        size: byteLength,
       });
       const tokenEstimate = await this.estimateTokens({
         model: options.model || "gpt-4o-mini",
         provider: options.provider || "openai",
         text: content,
       });
+      const tokenCost = tokenEstimate.status === "supported" ? tokenEstimate.tokenCount : null;
+      const metadata = {
+        path: relPath,
+        hash,
+        size: byteLength,
+        tokenCost,
+        firstSeenAt: cacheState.firstSeenAt,
+        lastSeenAt: cacheState.lastSeenAt,
+        previousSeenAt: cacheState.previousSeenAt,
+      };
+      const includeContent = options.includeContent === true || options.force === true || cacheState.status !== "unchanged";
+      const metadataTokenEstimate = await this.estimateTokens({
+        model: options.model || "gpt-4o-mini",
+        provider: options.provider || "openai",
+        text: JSON.stringify(metadata),
+      });
       return {
         file: {
-          path: relPath,
-          content,
-          tokenCost: tokenEstimate.status === "supported" ? tokenEstimate.tokenCount : null,
+          ...metadata,
+          metadataTokenCost: metadataTokenEstimate.status === "supported" ? metadataTokenEstimate.tokenCount : null,
+          omitted: !includeContent,
+          ...(includeContent ? { content } : {}),
         },
         cache: cacheState,
       };
@@ -173,6 +196,12 @@ function createRuntime(options = {}) {
         staleWarnings: [],
         truncated: items.length < rankedFiles.length,
         tokenCost: budget - remaining,
+        metrics: await this.contextMetrics({
+          items,
+          rules,
+          model: options.model || "gpt-4o-mini",
+          provider: options.provider || "openai",
+        }),
       };
     },
 
@@ -180,11 +209,40 @@ function createRuntime(options = {}) {
       const result = await runCommandInternal(command, {
         cwd: options.cwd || baseDir,
         classify: options.classify,
+        allowlist: options.allowlist,
+        dangerousPatterns: options.dangerousPatterns,
+        safeMode: options.safeMode,
+        timeoutMs: options.timeoutMs,
+        maxBuffer: options.maxBuffer,
+        maxLines: options.maxLines,
+        maxBytes: options.maxBytes,
       });
+      if (result.status === "blocked") {
+        return {
+          exitCode: null,
+          classification: null,
+          tokenCost: 0,
+          tokensBefore: 0,
+          summary: "",
+          errors: [],
+          warnings: [],
+          filesMentioned: [],
+          truncated: false,
+          artifactRef: null,
+          status: "blocked",
+          reason: result.reason,
+          nextActions: ["Review the command allowlist or rerun with safeMode disabled only if you trust the command."],
+        };
+      }
       const tokenEstimate = await this.estimateTokens({
         model: options.model || "gpt-4o-mini",
         provider: options.provider || "openai",
         text: result.summary,
+      });
+      const fullTokenEstimate = await this.estimateTokens({
+        model: options.model || "gpt-4o-mini",
+        provider: options.provider || "openai",
+        text: result.combined,
       });
       let artifactRef = null;
       if (result.truncated || options.persistArtifact !== false) {
@@ -195,13 +253,40 @@ function createRuntime(options = {}) {
         exitCode: result.exitCode,
         classification: result.classification,
         tokenCost: tokenEstimate.status === "supported" ? tokenEstimate.tokenCount : null,
+        tokensBefore: fullTokenEstimate.status === "supported" ? fullTokenEstimate.tokenCount : null,
         summary: result.summary,
         errors: result.errors,
         warnings: result.warnings,
+        filesMentioned: result.filesMentioned,
         truncated: result.truncated,
         artifactRef,
-        status: result.exitCode === 0 ? "ok" : "error",
+        status: result.status,
         nextActions: result.errors.length ? ["Inspect the stored artifact or rerun the command with narrower scope."] : [],
+      };
+    },
+
+    async contextMetrics({ items, rules, model, provider }) {
+      const optimizedText = [
+        ...rules.map((rule) => rule.text),
+        ...items.map((item) => item.excerpt),
+      ].join("\n");
+      const baselineText = this.ensureIndex().chunks.map((chunk) => chunk.text).join("\n");
+      const optimized = await this.estimateTokens({ model, provider, text: optimizedText });
+      const baseline = await this.estimateTokens({ model, provider, text: baselineText });
+      const optimizedTokens = optimized.status === "supported" ? optimized.tokenCount : 0;
+      const baselineTokens = baseline.status === "supported" ? baseline.tokenCount : 0;
+      return {
+        baselineTokens,
+        optimizedTokens,
+        tokensSaved: Math.max(baselineTokens - optimizedTokens, 0),
+        savingsRatio: baselineTokens ? Number(((baselineTokens - optimizedTokens) / baselineTokens).toFixed(4)) : 0,
+        savingsBy: {
+          retrieval: Math.max(baselineTokens - optimizedTokens, 0),
+          cache: 0,
+          commandCompaction: 0,
+          pinnedRules: optimizedTokens,
+          embeddings: 0,
+        },
       };
     },
 
